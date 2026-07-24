@@ -9,6 +9,7 @@ import type {
 } from '@earendil-works/pi-ai'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { AuthorizerLog, PermissionQuery, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
+import { ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DenialCircuitBreaker } from '../src/circuit-breaker.js'
 import { autoReviewConfigSchema } from '../src/config.js'
@@ -108,6 +109,7 @@ interface HarnessOptions {
   auth?: Awaited<ReturnType<ReviewModelRegistry['getApiKeyAndHeaders']>>
   timeoutMs?: number
   resultFactory?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
+  providerLookup?: 'native' | 'legacy' | 'missing' | 'throwing'
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -146,11 +148,42 @@ function createHarness(options: HarnessOptions = {}) {
       },
     ),
   )
-  const registry: ReviewModelRegistry = {
+  const registryBase = {
     find: vi.fn(() => model),
     getAll: vi.fn(() => [model]),
-    getProvider: vi.fn(() => provider),
     getApiKeyAndHeaders,
+  }
+  const providerLookup = vi.fn(() => provider)
+  let registry: ReviewModelRegistry
+  switch (options.providerLookup ?? 'native') {
+    case 'native':
+      registry = { ...registryBase, getProvider: providerLookup }
+      break
+    case 'legacy':
+      registry = new ModelRegistry({
+        getProvider: providerLookup,
+        getModel: vi.fn(() => model),
+        getModels: vi.fn(() => [model]),
+        getAuth: vi.fn(async () => ({
+          auth: {
+            apiKey: 'secret-key',
+            headers: { 'x-review': 'enabled' },
+          },
+          env: { REVIEW_REGION: 'test' },
+        })),
+      } as never)
+      break
+    case 'missing':
+      registry = registryBase
+      break
+    case 'throwing':
+      registry = {
+        ...registryBase,
+        getProvider: () => {
+          throw new Error('provider lookup failed')
+        },
+      }
+      break
   }
   const circuitBreaker = new DenialCircuitBreaker()
   const authorize = createPermissionReviewer(
@@ -177,6 +210,7 @@ function createHarness(options: HarnessOptions = {}) {
     authorize,
     circuitBreaker,
     getApiKeyAndHeaders,
+    registry,
     streamSimple,
   }
 }
@@ -213,6 +247,17 @@ describe('permission reviewer', () => {
       maxTokens: 1_000,
       reasoning: 'low',
     })
+  })
+
+  it('uses the Pi 0.80.10 provider lookup polyfill', async () => {
+    const harness = createHarness({ providerLookup: 'legacy' })
+
+    expect(harness.registry).toBeInstanceOf(ModelRegistry)
+    expect('getProvider' in harness.registry).toBe(false)
+    await expect(harness.authorize(details(), query, createLog())).resolves.toEqual({
+      kind: 'allow',
+    })
+    expect(harness.streamSimple).toHaveBeenCalledOnce()
   })
 
   it('returns a teaching denial without persisting the rationale', async () => {
@@ -270,6 +315,32 @@ describe('permission reviewer', () => {
     })
     await expect(missingAuth.authorize(details(), query, createLog())).resolves.toEqual({ kind: 'defer' })
     expect(missingAuth.streamSimple.mock.calls).toHaveLength(0)
+  })
+
+  it('contains unsupported and throwing provider lookup failures', async () => {
+    const missing = createHarness({ providerLookup: 'missing' })
+    const missingLog = createLog()
+    await expect(missing.authorize(details(), query, missingLog)).resolves.toEqual({ kind: 'defer' })
+    expect(missingLog.review.mock.calls[0]?.[1]).toMatchObject({
+      errorCategory: 'provider-unresolved',
+    })
+
+    const throwing = createHarness({ providerLookup: 'throwing' })
+    const throwingLog = createLog()
+    await expect(throwing.authorize(details(), query, throwingLog)).resolves.toEqual({ kind: 'defer' })
+    expect(throwingLog.review.mock.calls[0]?.[1]).toMatchObject({
+      errorCategory: 'internal-error',
+    })
+  })
+
+  it('defers when review logging throws', async () => {
+    const harness = createHarness()
+    const log = createLog()
+    log.review.mockImplementation(() => {
+      throw new Error('log unavailable')
+    })
+
+    await expect(harness.authorize(details(), query, log)).resolves.toEqual({ kind: 'defer' })
   })
 
   it('opens the per-turn circuit after three consecutive denials', async () => {

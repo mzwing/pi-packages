@@ -25,6 +25,7 @@ type FailureCategory =
   | 'invalid-response'
   | 'timeout'
   | 'cancelled'
+  | 'internal-error'
 
 export interface ReviewerRuntime {
   config: AutoReviewConfig
@@ -179,6 +180,28 @@ function writeFailure(
   log.debug(FAILURE_EVENT, common)
 }
 
+function tryWriteFailure(
+  log: AuthorizerLog,
+  runtime: ReviewerRuntime,
+  details: PromptPermissionDetails,
+  failure: Failure,
+  durationMs: number,
+): void {
+  try {
+    writeFailure(log, runtime, details, failure, durationMs)
+  } catch {
+    // Permission review failures must not escape into the fail-closed tool boundary.
+  }
+}
+
+function elapsedMilliseconds(now: () => number, startedAt: number): number {
+  try {
+    return Math.max(0, now() - startedAt)
+  } catch {
+    return 0
+  }
+}
+
 async function runReview(
   runtime: ReviewerRuntime,
   details: PromptPermissionDetails,
@@ -278,49 +301,66 @@ export function createPermissionReviewer(
   }
 
   return async (details, _query, log) => {
-    const startedAt = dependencies.now()
-    if (runtime.circuitBreaker.isOpen()) {
-      const reason =
-        'Automatic permission review rejected too many requests in this turn. Ask the user for explicit approval before retrying.'
-      log.review(CIRCUIT_OPEN_EVENT, {
+    let startedAt = 0
+    try {
+      startedAt = dependencies.now()
+      if (runtime.circuitBreaker.isOpen()) {
+        const reason =
+          'Automatic permission review rejected too many requests in this turn. Ask the user for explicit approval before retrying.'
+        log.review(CIRCUIT_OPEN_EVENT, {
+          requestId: details.requestId,
+          provider: runtime.config.provider,
+          model: runtime.config.model,
+          outcome: 'deny',
+          durationMs: 0,
+          errorCategory: 'circuit-open',
+        })
+        return { kind: 'deny', reason }
+      }
+
+      const result = await runReview(runtime, details, dependencies)
+      const durationMs = elapsedMilliseconds(dependencies.now, startedAt)
+      if ('category' in result) {
+        runtime.circuitBreaker.recordNonDenial()
+        writeFailure(log, runtime, details, result, durationMs)
+        return { kind: 'defer' }
+      }
+
+      const { assessment } = result
+      log.review(DECISION_EVENT, {
         requestId: details.requestId,
         provider: runtime.config.provider,
         model: runtime.config.model,
-        outcome: 'deny',
-        durationMs: 0,
-        errorCategory: 'circuit-open',
+        riskLevel: assessment.riskLevel,
+        userAuthorization: assessment.userAuthorization,
+        outcome: assessment.outcome,
+        durationMs,
       })
-      return { kind: 'deny', reason }
-    }
 
-    const result = await runReview(runtime, details, dependencies)
-    const durationMs = Math.max(0, dependencies.now() - startedAt)
-    if ('category' in result) {
-      runtime.circuitBreaker.recordNonDenial()
-      writeFailure(log, runtime, details, result, durationMs)
+      if (assessment.outcome === 'allow') {
+        runtime.circuitBreaker.recordNonDenial()
+        return { kind: 'allow' }
+      }
+
+      runtime.circuitBreaker.recordDenied()
+      return {
+        kind: 'deny',
+        reason: `Automatic permission review denied this action (risk: ${assessment.riskLevel}, authorization: ${assessment.userAuthorization}): ${assessment.rationale}`,
+      }
+    } catch {
+      try {
+        runtime.circuitBreaker.recordNonDenial()
+      } catch {
+        // Returning defer remains the safe fallback even if local state is unavailable.
+      }
+      tryWriteFailure(
+        log,
+        runtime,
+        details,
+        { category: 'internal-error' },
+        elapsedMilliseconds(dependencies.now, startedAt),
+      )
       return { kind: 'defer' }
-    }
-
-    const { assessment } = result
-    log.review(DECISION_EVENT, {
-      requestId: details.requestId,
-      provider: runtime.config.provider,
-      model: runtime.config.model,
-      riskLevel: assessment.riskLevel,
-      userAuthorization: assessment.userAuthorization,
-      outcome: assessment.outcome,
-      durationMs,
-    })
-
-    if (assessment.outcome === 'allow') {
-      runtime.circuitBreaker.recordNonDenial()
-      return { kind: 'allow' }
-    }
-
-    runtime.circuitBreaker.recordDenied()
-    return {
-      kind: 'deny',
-      reason: `Automatic permission review denied this action (risk: ${assessment.riskLevel}, authorization: ${assessment.userAuthorization}): ${assessment.rationale}`,
     }
   }
 }

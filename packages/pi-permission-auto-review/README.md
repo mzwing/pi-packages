@@ -17,6 +17,8 @@ pi install npm:@gotgenes/pi-permission-system # dependency
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
+Pi 0.80.10 and Pi 0.81.x are supported. The extension uses `@mzwing/pi-polyfill` transitively for provider lookup on Pi 0.80.10; do not install the polyfill as a separate Pi extension.
+
 ## Enable
 
 Add `"auto-review"` to pi-permission-system's config:
@@ -77,6 +79,7 @@ Custom providers and models must be defined in Pi's `~/.pi/agent/models.json`, t
 ## Behavior and Limits
 
 - Model, authentication, timeout, provider, or response-format failures defer to the normal human prompt.
+- Unexpected internal review failures also defer to the human prompt instead of escaping into the permission gate.
 - Three consecutive denials, or ten denials in the latest fifty reviews, open a circuit breaker until the next Pi turn.
 - pi-permission-system prevents authorizers from auto-approving `path` and `external_directory` requests.
 

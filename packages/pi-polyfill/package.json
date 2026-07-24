@@ -1,18 +1,15 @@
 {
-  "name": "@mzwing/pi-permission-auto-review",
-  "version": "0.1.2",
-  "description": "Codex-style automatic approval reviews for @gotgenes/pi-permission-system",
+  "name": "@mzwing/pi-polyfill",
+  "version": "0.0.0",
+  "description": "Compatibility helpers for Pi extension APIs",
   "keywords": [
-    "authorizer",
-    "auto-review",
-    "codex",
-    "permissions",
+    "compatibility",
+    "model-registry",
     "pi",
     "pi-coding-agent",
-    "pi-extension",
-    "pi-package"
+    "polyfill"
   ],
-  "homepage": "https://github.com/mzwing/pi-packages/tree/main/packages/pi-permission-auto-review#readme",
+  "homepage": "https://github.com/mzwing/pi-packages/tree/master/packages/pi-polyfill#readme",
   "bugs": {
     "url": "https://github.com/mzwing/pi-packages/issues"
   },
@@ -24,12 +21,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mzwing/pi-packages.git",
-    "directory": "packages/pi-permission-auto-review"
+    "directory": "packages/pi-polyfill"
   },
   "files": [
     "dist",
-    "schemas",
-    "config/config.example.json",
     "README.md",
     "LICENSE"
   ],
@@ -52,17 +47,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
     "prepack": "pnpm run build"
-  },
-  "dependencies": {
-    "@mzwing/pi-polyfill": "workspace:^",
-    "zod": "4.4.3"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
-    "@gotgenes/pi-permission-system": "20.10.0",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
@@ -70,15 +59,9 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "catalog:pi-peer",
-    "@earendil-works/pi-coding-agent": "catalog:pi-peer",
-    "@gotgenes/pi-permission-system": "^20.10.0"
+    "@earendil-works/pi-coding-agent": "catalog:pi-peer"
   },
   "engines": {
     "node": ">=24"
-  },
-  "pi": {
-    "extensions": [
-      "./dist/index.js"
-    ]
   }
 }

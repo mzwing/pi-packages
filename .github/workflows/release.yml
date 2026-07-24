@@ -2,12 +2,14 @@ name: Release
 
 on:
   push:
-    tags:
-      - '*-v[0-9]+.[0-9]+.[0-9]+'
-      - '*-v[0-9]+.[0-9]+.[0-9]+-*'
+    branches:
+      - master
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
   contents: write
+  pull-requests: write
   id-token: write
 
 jobs:
@@ -35,22 +37,11 @@ jobs:
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
 
-      - name: Prepare release
-        id: release
+      - name: Create release pull request or publish to NPM
+        uses: changesets/action@v1
+        with:
+          publish: pnpm run release
+          version: pnpm run bump-version
+          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: pnpm run release:prepare
-
-      - name: Publish to NPM
-        env:
-          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
-          PACKAGE_NAME: ${{ steps.release.outputs.package_name }}
-        run: pnpm --filter "$PACKAGE_NAME" publish --access public --no-git-checks --tag "$NPM_TAG"
-
-      - name: Publish GitHub release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_NOTES_PATH: ${{ steps.release.outputs.release_notes_path }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: pnpm run release:github

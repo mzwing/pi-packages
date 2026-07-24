@@ -4,7 +4,7 @@
 
 A [Pi](https://github.com/earendil-works/pi) extension that adds Codex-style automatic permission reviews to [`@gotgenes/pi-permission-system`](https://github.com/gotgenes/pi-packages/tree/main/packages/pi-permission-system).
 
-## Differences betweem `@gotgenes/pi-permission-model-judge`
+## Differences between `@gotgenes/pi-permission-model-judge`
 
 [@gotgenes/pi-permission-model-judge](https://github.com/gotgenes/pi-packages/tree/main/packages/pi-permission-model-judge) is a general-purpose model-based authorizer that can be used to evaluate any permission request.
 

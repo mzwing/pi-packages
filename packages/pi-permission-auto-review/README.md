@@ -76,12 +76,9 @@ Custom providers and models must be defined in Pi's `~/.pi/agent/models.json`, t
 
 ## Behavior and Limits
 
-- Only direct user transcript entries can establish authorization; assistant, tool, summary, and permission-request content is untrusted.
-- Reviewer calls have no tools and cannot recursively request permission.
 - Model, authentication, timeout, provider, or response-format failures defer to the normal human prompt.
 - Three consecutive denials, or ten denials in the latest fifty reviews, open a circuit breaker until the next Pi turn.
 - pi-permission-system prevents authorizers from auto-approving `path` and `external_directory` requests.
-- The compact transcript and permission request are sent to the selected provider. Audit metadata is written through pi-permission-system's shared logger without credentials, model rationales, or the complete transcript.
 
 ## License
 

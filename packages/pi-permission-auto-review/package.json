@@ -1,6 +1,6 @@
 {
   "name": "@mzwing/pi-permission-auto-review",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codex-style automatic approval reviews for @gotgenes/pi-permission-system",
   "keywords": [
     "authorizer",

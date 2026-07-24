@@ -1,0 +1,37 @@
+{
+  "name": "@mzwing/pi-packages",
+  "private": true,
+  "description": "Monorepo for mzwing's Pi packages",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run scripts/release.test.mjs && pnpm -r --filter './packages/**' run test",
+    "release:prepare": "node scripts/release.mjs prepare",
+    "release:github": "node scripts/release.mjs github",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "knip": "knip"
+  },
+  "devDependencies": {
+    "@mzwing/oxc-config": "^0.1.4",
+    "@types/node": "catalog:",
+    "changelogithub": "14.0.0",
+    "knip": "^6.29.0",
+    "oxfmt": "^0.59.0",
+    "oxlint": "^1.75.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "vitest": "4.1.10"
+  },
+  "lint-staged": {
+    "*.{cjs,cjsx,cts,ctsx,js,jsx,mjs,mjsx,mts,mtsx,ts,tsx,vue}": [
+      "oxfmt --write",
+      "oxlint --fix"
+    ],
+    "*.{css,graphql,gql,html,json,json5,jsonc,less,md,mdx,scss,svelte,toml,yaml,yml}": "oxfmt --write"
+  },
+  "packageManager": "pnpm@11.16.0+sha512.b767e9a98fc87aec0f42daefcd0e84941c2cdb45d73c4e1e68860fb2bdfdbe032ab592105479e5e05c237f740c8a5ffdbbb52385797ddc2296745a1bbb883e8d"
+}

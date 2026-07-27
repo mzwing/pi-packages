@@ -1,5 +1,12 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.1.4
+### Patch Changes
+
+
+
+- [`351bc90`](https://github.com/mzwing/pi-packages/commit/351bc903442cb7e42514b6672290ad7ef4e6750b) Thanks [@mzwing](https://github.com/mzwing)! - Prevent subagent extension instances from repeatedly registering the process-global `auto-review` authorizer.
+
 ## 0.1.3
 ### Patch Changes
 

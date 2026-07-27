@@ -5,20 +5,20 @@ packages:
   - packages/*
 
 catalog:
-  "@earendil-works/pi-ai": 0.80.10
-  "@earendil-works/pi-coding-agent": 0.80.10
-  "@types/node": 26.1.1
+  '@earendil-works/pi-ai': 0.80.10
+  '@earendil-works/pi-coding-agent': 0.80.10
+  '@types/node': 26.1.1
   tsdown: 0.22.13
   typescript: 7.0.2
   vitest: 4.1.10
 
 catalogs:
   pi-peer:
-    "@earendil-works/pi-ai": ^0.80.10 || ^0.81.0
-    "@earendil-works/pi-coding-agent": ^0.80.10 || ^0.81.0
+    '@earendil-works/pi-ai': ^0.80.10 || ^0.81.0
+    '@earendil-works/pi-coding-agent': ^0.80.10 || ^0.81.0
 
 allowBuilds:
-  "@google/genai": true
+  '@google/genai': true
   esbuild: true
   protobufjs: true
   tree-sitter-bash: true

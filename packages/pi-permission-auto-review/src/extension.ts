@@ -38,6 +38,37 @@ interface SessionRuntime {
   sessionManager: Pick<SessionManager, 'buildContextEntries'>
 }
 
+interface RegistrationOwnership {
+  service: PermissionsService
+  ownerToken: symbol
+}
+
+type RegistrationRole = 'pending' | 'owner' | 'passive'
+
+// Pi loads extensions through isolated module graphs, while subagents still
+// share one process-global PermissionsService. Symbol.for keeps ownership
+// visible across those module boundaries without involving child lifetimes.
+const REGISTRATION_OWNERSHIP_KEY = Symbol.for('@mzwing/pi-permission-auto-review:registration')
+const PASSIVE_CONFIG_MESSAGE =
+  'the auto-review authorizer is managed by the main Pi session; change its configuration there'
+
+function getRegistrationOwnership(): RegistrationOwnership | undefined {
+  return (globalThis as Record<symbol, unknown>)[REGISTRATION_OWNERSHIP_KEY] as RegistrationOwnership | undefined
+}
+
+function setRegistrationOwnership(ownership: RegistrationOwnership): void {
+  const processGlobals = globalThis as Record<symbol, unknown>
+  processGlobals[REGISTRATION_OWNERSHIP_KEY] = ownership
+}
+
+function clearRegistrationOwnership(service: PermissionsService, ownerToken: symbol): void {
+  const ownership = getRegistrationOwnership()
+  if (ownership?.service !== service || ownership.ownerToken !== ownerToken) {
+    return
+  }
+  delete (globalThis as Record<symbol, unknown>)[REGISTRATION_OWNERSHIP_KEY]
+}
+
 function warn(message: string): void {
   console.warn(`[${EXTENSION_ID}] ${message}`)
 }
@@ -57,8 +88,11 @@ function installAutoReviewExtension(
       }))
 
   const circuitBreaker = new DenialCircuitBreaker()
+  const ownerToken = Symbol(EXTENSION_ID)
   let sessionRuntime: SessionRuntime | undefined
   let generation: ReviewerGeneration | undefined
+  let registrationRole: RegistrationRole = 'pending'
+  let ownedService: PermissionsService | undefined
 
   function createInvalidConfigReviewer(): Authorizer['authorize'] {
     return async (details, _query, log) => {
@@ -99,16 +133,42 @@ function installAutoReviewExtension(
     }
   }
 
+  function ownsRegistration(service: PermissionsService): boolean {
+    const ownership = getRegistrationOwnership()
+    return ownership?.service === service && ownership.ownerToken === ownerToken
+  }
+
+  function claimRegistration(service: PermissionsService): void {
+    setRegistrationOwnership({ service, ownerToken })
+    ownedService = service
+    registrationRole = 'owner'
+  }
+
+  function releaseRegistration(): void {
+    if (ownedService !== undefined) {
+      clearRegistrationOwnership(ownedService, ownerToken)
+    }
+    ownedService = undefined
+    registrationRole = 'pending'
+  }
+
   function cleanupGeneration(target: ReviewerGeneration | undefined): void {
     try {
+      // Passive generations never receive a disposer. A stale owner may now
+      // be passive for a replacement service, but must still release its own
+      // old-service registration.
       target?.dispose?.()
     } finally {
-      target?.controller.abort()
+      if (target !== undefined) {
+        target.dispose = undefined
+        target.controller.abort()
+      }
+      releaseRegistration()
     }
   }
 
   function tryRegister(): void {
-    if (generation === undefined || generation.dispose !== undefined) {
+    if (generation === undefined || generation.dispose !== undefined || registrationRole === 'passive') {
       return
     }
     const service = getPermissionsService()
@@ -116,8 +176,20 @@ function installAutoReviewExtension(
       return
     }
 
+    const ownership = getRegistrationOwnership()
+    if (ownership?.service === service) {
+      if (ownership.ownerToken === ownerToken) {
+        registrationRole = 'owner'
+        ownedService = service
+      } else {
+        registrationRole = 'passive'
+      }
+      return
+    }
+
     try {
       generation.dispose = service.registerAuthorizer(AUTHORIZER_NAME, generation.authorize)
+      claimRegistration(service)
     } catch (error) {
       warn(`failed to register ${AUTHORIZER_NAME}: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -135,11 +207,24 @@ function installAutoReviewExtension(
     if (current === undefined || sessionRuntime === undefined) {
       return { kind: 'failed', message: 'the Pi session has not started' }
     }
+    if (registrationRole === 'passive') {
+      return { kind: 'failed', message: PASSIVE_CONFIG_MESSAGE }
+    }
     if (result.config === undefined) {
       return {
         kind: 'failed',
         message: 'the merged config is invalid; the previous reviewer remains active',
       }
+    }
+
+    const service = getPermissionsService()
+    const ownership = service === undefined ? undefined : getRegistrationOwnership()
+    if (service !== undefined && ownership?.service === service && ownership.ownerToken !== ownerToken) {
+      registrationRole = 'passive'
+      return { kind: 'failed', message: PASSIVE_CONFIG_MESSAGE }
+    }
+    if (registrationRole === 'owner' && service !== undefined && !ownsRegistration(service)) {
+      return { kind: 'failed', message: PASSIVE_CONFIG_MESSAGE }
     }
 
     let candidate: ReviewerGeneration | undefined
@@ -155,7 +240,6 @@ function installAutoReviewExtension(
       return { kind: 'failed', message: 'the Pi session has not started' }
     }
 
-    const service = getPermissionsService()
     if (service === undefined) {
       if (current.dispose !== undefined) {
         candidate.controller.abort()
@@ -185,12 +269,15 @@ function installAutoReviewExtension(
 
     try {
       candidate.dispose = service.registerAuthorizer(AUTHORIZER_NAME, candidate.authorize)
+      claimRegistration(service)
     } catch (error) {
       candidate.controller.abort()
       const registrationMessage = error instanceof Error ? error.message : String(error)
       try {
         current.dispose = service.registerAuthorizer(AUTHORIZER_NAME, current.authorize)
+        claimRegistration(service)
       } catch (restoreError) {
+        releaseRegistration()
         return {
           kind: 'failed',
           message: `new reviewer registration failed (${registrationMessage}) and the old reviewer could not be restored (${restoreError instanceof Error ? restoreError.message : String(restoreError)})`,

@@ -159,6 +159,102 @@ describe('extension lifecycle', () => {
     expect(registerAuthorizer).toHaveBeenCalledOnce()
   })
 
+  it('makes later instances passive for a shared service and leaves disposal to the owner', async () => {
+    const ownerHarness = createPiHarness()
+    const passiveHarness = createPiHarness()
+    const ownerDispose = vi.fn()
+    const registerAuthorizer = vi.fn(() => ownerDispose)
+    const service = { registerAuthorizer } as unknown as PermissionsService
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const globalPath = '/agent/extensions/pi-permission-auto-review/config.json'
+    const { store } = createConfigStore({
+      [globalPath]: JSON.stringify({ reasoning: 'high' }),
+    })
+
+    createAutoReviewExtension(ownerHarness.pi, {
+      loadConfig: configResult,
+      getPermissionsService: () => service,
+      createReviewer: () => vi.fn<Authorizer['authorize']>(),
+    })
+    createAutoReviewExtensionWithConfigStore(passiveHarness.pi, store, {
+      getPermissionsService: () => service,
+      createReviewer: () => vi.fn<Authorizer['authorize']>(),
+    })
+
+    ownerHarness.emit('session_start', {}, context())
+    passiveHarness.emit('session_start', {}, context())
+    passiveHarness.emitEvent(PERMISSIONS_READY_CHANNEL, {})
+    passiveHarness.emitEvent(PERMISSIONS_READY_CHANNEL, {})
+
+    expect(registerAuthorizer).toHaveBeenCalledOnce()
+    expect(warn).not.toHaveBeenCalled()
+
+    const notify = vi.fn()
+    await passiveHarness.getCommand('permission-auto-review')?.handler('reset global', commandContext(notify))
+
+    expect(registerAuthorizer).toHaveBeenCalledOnce()
+    expect(ownerDispose).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('managed by the main Pi session'), 'error')
+
+    passiveHarness.emit('session_shutdown')
+    expect(ownerDispose).not.toHaveBeenCalled()
+
+    ownerHarness.emit('session_shutdown')
+    expect(ownerDispose).toHaveBeenCalledOnce()
+
+    const replacementHarness = createPiHarness()
+    createAutoReviewExtension(replacementHarness.pi, {
+      loadConfig: configResult,
+      getPermissionsService: () => service,
+      createReviewer: () => vi.fn<Authorizer['authorize']>(),
+    })
+    replacementHarness.emit('session_start', {}, context())
+    expect(registerAuthorizer).toHaveBeenCalledTimes(2)
+    replacementHarness.emit('session_shutdown')
+
+    warn.mockRestore()
+  })
+
+  it('keeps a replacement service owner when the old owner shuts down late', () => {
+    const oldHarness = createPiHarness()
+    const newHarness = createPiHarness()
+    const observerHarness = createPiHarness()
+    const oldDispose = vi.fn()
+    const newDispose = vi.fn()
+    const oldRegisterAuthorizer = vi.fn(() => oldDispose)
+    const newRegisterAuthorizer = vi.fn(() => newDispose)
+    const oldService = { registerAuthorizer: oldRegisterAuthorizer } as unknown as PermissionsService
+    const newService = { registerAuthorizer: newRegisterAuthorizer } as unknown as PermissionsService
+
+    for (const [harness, service] of [
+      [oldHarness, oldService],
+      [newHarness, newService],
+      [observerHarness, newService],
+    ] as const) {
+      createAutoReviewExtension(harness.pi, {
+        loadConfig: configResult,
+        getPermissionsService: () => service,
+        createReviewer: () => vi.fn<Authorizer['authorize']>(),
+      })
+    }
+
+    oldHarness.emit('session_start', {}, context())
+    newHarness.emit('session_start', {}, context())
+    expect(oldRegisterAuthorizer).toHaveBeenCalledOnce()
+    expect(newRegisterAuthorizer).toHaveBeenCalledOnce()
+
+    oldHarness.emit('session_shutdown')
+    observerHarness.emit('session_start', {}, context())
+
+    expect(oldDispose).toHaveBeenCalledOnce()
+    expect(newRegisterAuthorizer).toHaveBeenCalledOnce()
+
+    observerHarness.emit('session_shutdown')
+    expect(newDispose).not.toHaveBeenCalled()
+    newHarness.emit('session_shutdown')
+    expect(newDispose).toHaveBeenCalledOnce()
+  })
+
   it('registers a defer-only reviewer when config is invalid', async () => {
     const harness = createPiHarness()
     let registered: Authorizer['authorize'] | undefined
@@ -263,11 +359,12 @@ describe('extension lifecycle', () => {
     const harness = createPiHarness()
     const firstDispose = vi.fn()
     const registerAuthorizer = vi.fn(() => firstDispose)
+    const service = { registerAuthorizer } as unknown as PermissionsService
     const createReviewer = vi.fn(() => vi.fn<Authorizer['authorize']>())
     const notify = vi.fn()
 
     createAutoReviewExtensionWithConfigStore(harness.pi, store, {
-      getPermissionsService: () => ({ registerAuthorizer }) as unknown as PermissionsService,
+      getPermissionsService: () => service,
       createReviewer,
     })
     harness.emit('session_start', {}, context())
@@ -302,10 +399,11 @@ describe('extension lifecycle', () => {
         throw new Error('candidate rejected')
       })
       .mockReturnValueOnce(restoredDispose)
+    const service = { registerAuthorizer } as unknown as PermissionsService
     const notify = vi.fn()
 
     createAutoReviewExtensionWithConfigStore(harness.pi, store, {
-      getPermissionsService: () => ({ registerAuthorizer }) as unknown as PermissionsService,
+      getPermissionsService: () => service,
       createReviewer: vi.fn().mockReturnValueOnce(firstAuthorize).mockReturnValueOnce(secondAuthorize),
     })
     harness.emit('session_start', {}, context())

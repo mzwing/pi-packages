@@ -22,9 +22,9 @@
     "@changesets/cli": "2.31.1",
     "@mzwing/oxc-config": "^0.1.4",
     "@types/node": "catalog:",
-    "knip": "^6.29.0",
-    "oxfmt": "^0.60.0",
-    "oxlint": "^1.75.0",
+    "knip": "^6.32.0",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
     "oxlint-tsgolint": "^7.0.2001"
   },
   "lint-staged": {
@@ -34,5 +34,5 @@
     ],
     "*.{css,graphql,gql,html,json,json5,jsonc,less,md,mdx,scss,svelte,toml,yaml,yml}": "oxfmt --write"
   },
-  "packageManager": "pnpm@11.17.0+sha512.cca3cea332ad254bb84145f966d19f4879615210346fc92c79a047f23a0d7b3cca3c3792f0076ba1f1831d277efbcf0a9119b31a9a60eca7fb3d6231f331ef72"
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1"
 }

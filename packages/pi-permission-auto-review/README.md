@@ -10,6 +10,8 @@ A [Pi](https://github.com/earendil-works/pi) extension that adds Codex-style aut
 
 Ours is mostly specialized for OpenAI's `codex-auto-review` model, which is trained to evaluate permission requests in the context of a coding assistant. Our extension aims at providing Codex-style automatic permission reviews for Pi's coding agent.
 
+The bundled baseline is a Pi-specific adaptation of OpenAI Codex Guardian's [`policy_template.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy_template.md) and [`policy.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy.md) at revision [`c4f42d161ae44a8d696ee9fb595709661979d187`](https://github.com/openai/codex/commit/c4f42d161ae44a8d696ee9fb595709661979d187). It is bundled at build time; the extension never fetches policy text while reviewing an action.
+
 ## Install
 
 ```bash
@@ -78,10 +80,42 @@ Custom providers and models must be defined in Pi's `~/.pi/agent/models.json`, t
 
 ## Behavior and Limits
 
+### Authorization evidence
+
+The reviewer reads the current session's complete active branch with `SessionManager.getBranch()`, rather than only the post-compaction model context. This keeps original user authorization available after compaction without mixing in abandoned branches.
+
+Only these transcript records can establish authorization:
+
+- Pi session user-role messages (`source: "user"`);
+- completed, non-cancelled responses to recognized `ask_user_question` and `plan_mode_question` calls (`source: "user_interaction"`).
+
+Pi does not persist the original `input` event source on user-role messages, so `source: "user"` is a trust boundary provided by the Pi runtime rather than cryptographic proof of keyboard input. Trusted extensions can intentionally create such messages with `sendUserMessage()`; as with the rest of Pi's extension model, only trusted extension code should be installed.
+
+Structured question responses are accepted only when the non-error result matches a preceding recognized tool call and are rebuilt from `details.answers` data. Free-form tool-result text is never promoted to user evidence. Assistant messages, ordinary tool calls/results, custom messages, and compaction/branch summaries remain untrusted even if their text claims to be user content.
+
+Transcript rendering uses separate 10k-token message and tool budgets with per-entry truncation. The first and latest trusted records are retained first, then other trusted records from newest to oldest. The 40-entry recency cap applies only to assistant/tool evidence, so later tool activity cannot evict an already selected user authorization. Truncation indicates missing information; it does not itself raise intrinsic action risk.
+
+### Permission boundaries
+
 - Model, authentication, timeout, provider, or response-format failures defer to the normal human prompt.
 - Unexpected internal review failures also defer to the human prompt instead of escaping into the permission gate.
 - Three consecutive denials, or ten denials in the latest fifty reviews, open a circuit breaker until the next Pi turn.
-- pi-permission-system prevents authorizers from auto-approving `path` and `external_directory` requests.
+- pi-permission-system's delegation envelope prevents authorizers from auto-approving `path` and `external_directory` requests. An auto-review `allow` for those surfaces is deliberately downgraded to the normal human prompt; this extension does not bypass that boundary.
+
+### Diagnostics
+
+Each `auto_review.decision` emitted after transcript construction adds content-free context diagnostics (configuration failures that defer before a review do not have transcript diagnostics):
+
+- `policyRevision`
+- `contextSource` (`active-branch`)
+- `transcriptEntriesRetained`
+- `transcriptEntriesOmitted`
+- `transcriptEntriesTruncated`
+- `directUserEntriesRetained` / `directUserEntriesOmitted` / `directUserEntriesTruncated`
+- `userInteractionEntriesRetained` / `userInteractionEntriesOmitted` / `userInteractionEntriesTruncated`
+- `latestTrustedEntryRetained`
+
+These fields distinguish missing or truncated authorization evidence from a model decision made after receiving trusted evidence. Transcript text and model rationale are not persisted. The records are written through pi-permission-system's existing permission-review log when that log is enabled.
 
 ## License
 

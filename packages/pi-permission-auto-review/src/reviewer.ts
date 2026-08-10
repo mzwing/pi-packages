@@ -1,11 +1,13 @@
 import type { DenialCircuitBreaker } from './circuit-breaker.js'
 import type { AutoReviewConfig } from './config.js'
 import type { ReviewModelRegistry } from './model.js'
+import type { TranscriptStats } from './transcript.js'
 import type { ReviewAssessment } from './verdict.js'
 import type { AssistantMessage, Provider, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import type { SessionManager } from '@earendil-works/pi-coding-agent'
 import type { Authorizer, AuthorizerLog, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { resolveReviewModel } from './model.js'
+import { POLICY_REVISION } from './policy.js'
 import { buildReviewPrompt } from './prompt.js'
 import { renderTranscript } from './transcript.js'
 import { parseReviewAssessment } from './verdict.js'
@@ -30,7 +32,7 @@ type FailureCategory =
 export interface ReviewerRuntime {
   config: AutoReviewConfig
   registry: ReviewModelRegistry
-  sessionManager: Pick<SessionManager, 'buildContextEntries'>
+  sessionManager: Pick<SessionManager, 'getBranch'>
   circuitBreaker: DenialCircuitBreaker
   sessionSignal?: AbortSignal
 }
@@ -42,12 +44,27 @@ export interface ReviewerDependencies {
   retryDelaysMs?: number[]
 }
 
+interface ContextDiagnostics extends TranscriptStats {
+  policyRevision: string
+  contextSource: 'active-branch'
+}
+
 interface Failure {
   category: FailureCategory
+  contextDiagnostics?: ContextDiagnostics
 }
 
 interface ReviewCallResult {
   assessment: ReviewAssessment
+  contextDiagnostics: ContextDiagnostics
+}
+
+function buildContextDiagnostics(stats: TranscriptStats): ContextDiagnostics {
+  return {
+    policyRevision: POLICY_REVISION,
+    contextSource: 'active-branch',
+    ...stats,
+  }
 }
 
 function abortError(): Error {
@@ -175,6 +192,7 @@ function writeFailure(
     outcome: 'defer',
     errorCategory: failure.category,
     durationMs,
+    ...failure.contextDiagnostics,
   }
   log.review(DECISION_EVENT, common)
   log.debug(FAILURE_EVENT, common)
@@ -216,9 +234,12 @@ async function runReview(
       : AbortSignal.any([timeoutController.signal, runtime.sessionSignal])
 
   try {
+    const transcript = renderTranscript(runtime.sessionManager.getBranch())
+    const contextDiagnostics = buildContextDiagnostics(transcript.stats)
+    const failure = (category: FailureCategory): Failure => ({ category, contextDiagnostics })
     const resolved = resolveReviewModel(runtime.registry, runtime.config)
     if (!resolved.ok) {
-      return { category: resolved.category }
+      return failure(resolved.category)
     }
 
     let auth
@@ -226,17 +247,14 @@ async function runReview(
       auth = await raceWithSignal(runtime.registry.getApiKeyAndHeaders(resolved.value.model), signal)
     } catch {
       if (signal.aborted) {
-        return {
-          category: timeoutController.signal.aborted ? 'timeout' : 'cancelled',
-        }
+        return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
       }
-      return { category: 'auth-unresolved' }
+      return failure('auth-unresolved')
     }
     if (!auth.ok) {
-      return { category: 'auth-unresolved' }
+      return failure('auth-unresolved')
     }
 
-    const transcript = renderTranscript(runtime.sessionManager.buildContextEntries())
     const prompt = buildReviewPrompt(runtime.config, transcript, details)
 
     for (let attempt = 1; attempt <= dependencies.maxAttempts; attempt += 1) {
@@ -260,30 +278,27 @@ async function runReview(
         try {
           return {
             assessment: parseReviewAssessment(responseText(message)),
+            contextDiagnostics,
           }
         } catch {
-          return { category: 'invalid-response' }
+          return failure('invalid-response')
         }
       } catch {
         if (signal.aborted) {
-          return {
-            category: timeoutController.signal.aborted ? 'timeout' : 'cancelled',
-          }
+          return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
         }
         if (attempt >= dependencies.maxAttempts) {
-          return { category: 'provider-error' }
+          return failure('provider-error')
         }
         const delay = dependencies.retryDelaysMs[attempt - 1] ?? dependencies.retryDelaysMs.at(-1) ?? 0
         try {
           await dependencies.sleep(delay, signal)
         } catch {
-          return {
-            category: timeoutController.signal.aborted ? 'timeout' : 'cancelled',
-          }
+          return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
         }
       }
     }
-    return { category: 'provider-error' }
+    return failure('provider-error')
   } finally {
     clearTimeout(timeout)
   }
@@ -326,7 +341,7 @@ export function createPermissionReviewer(
         return { kind: 'defer' }
       }
 
-      const { assessment } = result
+      const { assessment, contextDiagnostics } = result
       log.review(DECISION_EVENT, {
         requestId: details.requestId,
         provider: runtime.config.provider,
@@ -335,6 +350,7 @@ export function createPermissionReviewer(
         userAuthorization: assessment.userAuthorization,
         outcome: assessment.outcome,
         durationMs,
+        ...contextDiagnostics,
       })
 
       if (assessment.outcome === 'allow') {

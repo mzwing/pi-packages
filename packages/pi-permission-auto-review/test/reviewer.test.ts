@@ -79,6 +79,59 @@ function userEntry(): SessionEntry {
   }
 }
 
+function userInteractionEntries(): SessionEntry[] {
+  return [
+    {
+      type: 'message',
+      id: 'interaction-call',
+      parentId: 'user-1',
+      timestamp: '2026-07-23T00:00:30.000Z',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'question-1',
+            name: 'ask_user_question',
+            arguments: { questions: [] },
+          },
+        ],
+        api: 'openai-responses',
+        provider: 'test',
+        model: 'test',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'toolUse',
+        timestamp: 0,
+      },
+    },
+    {
+      type: 'message',
+      id: 'interaction-1',
+      parentId: 'interaction-call',
+      timestamp: '2026-07-23T00:01:00.000Z',
+      message: {
+        role: 'toolResult',
+        toolCallId: 'question-1',
+        toolName: 'ask_user_question',
+        content: [{ type: 'text', text: 'untrusted presentation text' }],
+        details: {
+          cancelled: false,
+          answers: [{ question: 'Choose a mode?', answer: 'Safe mode' }],
+        },
+        isError: false,
+        timestamp: 0,
+      },
+    },
+  ]
+}
+
 function details(overrides: Partial<PromptPermissionDetails> = {}): PromptPermissionDetails {
   return {
     requestId: 'request-1',
@@ -110,6 +163,7 @@ interface HarnessOptions {
   timeoutMs?: number
   resultFactory?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
   providerLookup?: 'native' | 'legacy' | 'missing' | 'throwing'
+  sessionEntries?: SessionEntry[]
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -186,6 +240,7 @@ function createHarness(options: HarnessOptions = {}) {
       break
   }
   const circuitBreaker = new DenialCircuitBreaker()
+  const getBranch = vi.fn(() => options.sessionEntries ?? [userEntry()])
   const authorize = createPermissionReviewer(
     {
       config: autoReviewConfigSchema.parse({
@@ -194,9 +249,7 @@ function createHarness(options: HarnessOptions = {}) {
         timeoutMs: options.timeoutMs ?? 90_000,
       }),
       registry,
-      sessionManager: {
-        buildContextEntries: () => [userEntry()],
-      },
+      sessionManager: { getBranch },
       circuitBreaker,
     },
     {
@@ -210,6 +263,7 @@ function createHarness(options: HarnessOptions = {}) {
     authorize,
     circuitBreaker,
     getApiKeyAndHeaders,
+    getBranch,
     registry,
     streamSimple,
   }
@@ -237,8 +291,9 @@ describe('permission reviewer', () => {
     })
     expect(context).not.toHaveProperty('tools')
     expect((context as { systemPrompt?: string }).systemPrompt).toContain(
-      'Only transcript JSONL records whose source field is "user"',
+      'source field is "user" or "user_interaction"',
     )
+    expect(harness.getBranch).toHaveBeenCalledOnce()
     expect(options).toMatchObject({
       apiKey: 'secret-key',
       headers: { 'x-review': 'enabled' },
@@ -247,6 +302,38 @@ describe('permission reviewer', () => {
       maxTokens: 1_000,
       reasoning: 'low',
     })
+    expect(log.review.mock.calls[0]?.[1]).toMatchObject({
+      policyRevision: 'openai-codex/c4f42d161ae44a8d696ee9fb595709661979d187+pi1',
+      contextSource: 'active-branch',
+      transcriptEntriesRetained: 1,
+      transcriptEntriesOmitted: 0,
+      transcriptEntriesTruncated: 0,
+      directUserEntriesRetained: 1,
+      directUserEntriesOmitted: 0,
+      directUserEntriesTruncated: 0,
+      userInteractionEntriesRetained: 0,
+      userInteractionEntriesOmitted: 0,
+      userInteractionEntriesTruncated: 0,
+      latestTrustedEntryRetained: true,
+    })
+  })
+
+  it('sends canonical structured user interactions to the provider', async () => {
+    const harness = createHarness({
+      sessionEntries: [userEntry(), ...userInteractionEntries()],
+    })
+
+    await expect(harness.authorize(details(), query, createLog())).resolves.toEqual({ kind: 'allow' })
+
+    const [, context] = harness.streamSimple.mock.calls[0] ?? []
+    const userPrompt = (
+      context as {
+        messages: Array<{ content: string }>
+      }
+    ).messages[0]?.content
+    expect(userPrompt).toContain('"source":"user_interaction"')
+    expect(userPrompt).toContain('[{\\"question\\":\\"Choose a mode?\\",\\"answer\\":\\"Safe mode\\"}]')
+    expect(userPrompt).not.toContain('untrusted presentation text')
   })
 
   it('uses the Pi 0.80.10 provider lookup polyfill', async () => {

@@ -15,7 +15,7 @@ import { createPermissionReviewer } from './reviewer.js'
 interface ReviewerFactoryOptions {
   config: AutoReviewConfig
   registry: ModelRegistry
-  sessionManager: Pick<SessionManager, 'buildContextEntries'>
+  sessionManager: Pick<SessionManager, 'getBranch'>
   circuitBreaker: DenialCircuitBreaker
   sessionSignal: AbortSignal
 }
@@ -35,7 +35,7 @@ interface ReviewerGeneration {
 
 interface SessionRuntime {
   registry: ModelRegistry
-  sessionManager: Pick<SessionManager, 'buildContextEntries'>
+  sessionManager: Pick<SessionManager, 'getBranch'>
 }
 
 interface RegistrationOwnership {

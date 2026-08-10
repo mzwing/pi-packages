@@ -1,5 +1,12 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.2.0
+### Minor Changes
+
+
+
+- [`162b8f5`](https://github.com/mzwing/pi-packages/commit/162b8f580d76bf043e697a1dd97f172ea9abd7f0) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-permission-auto-review): sync the latest codex-auto-review prompt, enhance permission reviewer with user interaction handling and transcript statistics
+
 ## 0.1.4
 ### Patch Changes
 

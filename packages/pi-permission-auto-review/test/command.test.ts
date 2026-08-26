@@ -146,6 +146,33 @@ describe('/permission-auto-review', () => {
     expect(harness.ui.notify).toHaveBeenCalledWith('Config saved and applied without reloading the Pi session.', 'info')
   })
 
+  it('drops an override when a field is set back to the inherited value', async () => {
+    const harness = createCommandHarness({
+      [globalPath]: JSON.stringify({ reasoning: 'high', model: 'kept-model' }),
+    })
+    let menuVisits = 0
+    harness.ui.select.mockImplementation(async (title: string, options: string[]) => {
+      if (title === 'Select configuration scope') {
+        return 'Global configuration'
+      }
+      if (title === 'Configure Reasoning') {
+        return 'Use inherited value'
+      }
+      if (title.startsWith('Permission auto-review settings')) {
+        menuVisits += 1
+        return menuVisits === 1 ? options.find(option => option.startsWith('Reasoning:')) : 'Save changes'
+      }
+      return undefined
+    })
+
+    await harness.command().handler('', harness.context)
+
+    const stored: unknown = JSON.parse(harness.files.get(globalPath) ?? '')
+    expect(stored).not.toHaveProperty('reasoning')
+    expect(stored).toMatchObject({ model: 'kept-model' })
+    expect(harness.activeConfig()).toMatchObject({ reasoning: 'low', model: 'kept-model' })
+  })
+
   it('cancels the settings menu without writing or applying', async () => {
     const harness = createCommandHarness()
     harness.ui.select.mockResolvedValueOnce('Project configuration').mockResolvedValueOnce('Cancel')

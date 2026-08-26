@@ -1,5 +1,5 @@
 import type { Api, Provider } from '@earendil-works/pi-ai'
-import { ModelRegistry } from '@earendil-works/pi-coding-agent'
+import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { getModelRegistryProvider } from '../src/model-registry.js'
 
@@ -13,14 +13,14 @@ function provider(id: string): Provider<Api> {
 }
 
 describe('getModelRegistryProvider', () => {
-  it('polyfills the Pi 0.80.10 ModelRegistry through its model runtime', () => {
+  it('polyfills a pre-0.82 ModelRegistry through its model runtime', () => {
     const expected = provider('legacy')
     const runtime = { getProvider: vi.fn() }
     runtime.getProvider.mockImplementation(function (this: object, providerId: string) {
       expect(this).toBe(runtime)
       return providerId === expected.id ? expected : undefined
     })
-    const registry = new ModelRegistry(runtime as never)
+    const registry = { runtime } as unknown as ModelRegistry
     const keysBefore = Reflect.ownKeys(registry)
 
     expect('getProvider' in registry).toBe(false)
@@ -65,11 +65,13 @@ describe('getModelRegistryProvider', () => {
     expect(() => getModelRegistryProvider(nativeRegistry, 'native')).toThrow(nativeError)
 
     const legacyError = new Error('legacy failed')
-    const legacyRegistry = new ModelRegistry({
-      getProvider: () => {
-        throw legacyError
+    const legacyRegistry = {
+      runtime: {
+        getProvider: () => {
+          throw legacyError
+        },
       },
-    } as never)
+    } as unknown as ModelRegistry
     expect(() => getModelRegistryProvider(legacyRegistry, 'legacy')).toThrow(legacyError)
   })
 })

@@ -3,7 +3,7 @@ import type { AutoReviewConfig } from './config.js'
 import type { ReviewModelRegistry } from './model.js'
 import type { TranscriptStats } from './transcript.js'
 import type { ReviewAssessment } from './verdict.js'
-import type { AssistantMessage, Provider, SimpleStreamOptions } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Provider, ProviderHeaders, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import type { SessionManager } from '@earendil-works/pi-coding-agent'
 import type { Authorizer, AuthorizerLog, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { resolveReviewModel } from './model.js'
@@ -12,8 +12,8 @@ import { buildReviewPrompt } from './prompt.js'
 import { renderTranscript } from './transcript.js'
 import { parseReviewAssessment } from './verdict.js'
 
-const DEFAULT_MAX_ATTEMPTS = 3
-const DEFAULT_RETRY_DELAYS_MS = [250, 1_000]
+const RETRY_DELAYS_MS = [250, 1_000]
+const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1
 const MAX_OUTPUT_TOKENS = 1_000
 const DECISION_EVENT = 'auto_review.decision'
 const FAILURE_EVENT = 'auto_review.failure'
@@ -37,11 +37,10 @@ export interface ReviewerRuntime {
   sessionSignal?: AbortSignal
 }
 
+/** The clock and timer, injectable so a test does not wait out a real retry delay. */
 export interface ReviewerDependencies {
   now?: () => number
   sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>
-  maxAttempts?: number
-  retryDelaysMs?: number[]
 }
 
 interface ContextDiagnostics extends TranscriptStats {
@@ -57,14 +56,6 @@ interface Failure {
 interface ReviewCallResult {
   assessment: ReviewAssessment
   contextDiagnostics: ContextDiagnostics
-}
-
-function buildContextDiagnostics(stats: TranscriptStats): ContextDiagnostics {
-  return {
-    policyRevision: POLICY_REVISION,
-    contextSource: 'active-branch',
-    ...stats,
-  }
 }
 
 function abortError(): Error {
@@ -128,7 +119,7 @@ function buildStreamOptions(
   timeoutMs: number,
   auth: {
     apiKey?: string
-    headers?: Record<string, string>
+    headers?: ProviderHeaders
     env?: Record<string, string>
   },
   reasoning: boolean,
@@ -198,32 +189,10 @@ function writeFailure(
   log.debug(FAILURE_EVENT, common)
 }
 
-function tryWriteFailure(
-  log: AuthorizerLog,
-  runtime: ReviewerRuntime,
-  details: PromptPermissionDetails,
-  failure: Failure,
-  durationMs: number,
-): void {
-  try {
-    writeFailure(log, runtime, details, failure, durationMs)
-  } catch {
-    // Permission review failures must not escape into the fail-closed tool boundary.
-  }
-}
-
-function elapsedMilliseconds(now: () => number, startedAt: number): number {
-  try {
-    return Math.max(0, now() - startedAt)
-  } catch {
-    return 0
-  }
-}
-
 async function runReview(
   runtime: ReviewerRuntime,
   details: PromptPermissionDetails,
-  dependencies: Required<Pick<ReviewerDependencies, 'now' | 'sleep' | 'maxAttempts' | 'retryDelaysMs'>>,
+  dependencies: Required<ReviewerDependencies>,
 ): Promise<ReviewCallResult | Failure> {
   const startedAt = dependencies.now()
   const timeoutController = new AbortController()
@@ -235,7 +204,11 @@ async function runReview(
 
   try {
     const transcript = renderTranscript(runtime.sessionManager.getBranch())
-    const contextDiagnostics = buildContextDiagnostics(transcript.stats)
+    const contextDiagnostics: ContextDiagnostics = {
+      policyRevision: POLICY_REVISION,
+      contextSource: 'active-branch',
+      ...transcript.stats,
+    }
     const failure = (category: FailureCategory): Failure => ({ category, contextDiagnostics })
     const resolved = resolveReviewModel(runtime.registry, runtime.config)
     if (!resolved.ok) {
@@ -257,7 +230,7 @@ async function runReview(
 
     const prompt = buildReviewPrompt(runtime.config, transcript, details)
 
-    for (let attempt = 1; attempt <= dependencies.maxAttempts; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         const remainingMs = Math.max(1, runtime.config.timeoutMs - (dependencies.now() - startedAt))
         const message = await raceWithSignal(
@@ -287,12 +260,11 @@ async function runReview(
         if (signal.aborted) {
           return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
         }
-        if (attempt >= dependencies.maxAttempts) {
+        if (attempt >= MAX_ATTEMPTS) {
           return failure('provider-error')
         }
-        const delay = dependencies.retryDelaysMs[attempt - 1] ?? dependencies.retryDelaysMs.at(-1) ?? 0
         try {
-          await dependencies.sleep(delay, signal)
+          await dependencies.sleep(RETRY_DELAYS_MS[attempt - 1] ?? 0, signal)
         } catch {
           return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
         }
@@ -308,17 +280,14 @@ export function createPermissionReviewer(
   runtime: ReviewerRuntime,
   reviewerDependencies: ReviewerDependencies = {},
 ): Authorizer['authorize'] {
-  const dependencies = {
+  const dependencies: Required<ReviewerDependencies> = {
     now: reviewerDependencies.now ?? Date.now,
     sleep: reviewerDependencies.sleep ?? defaultSleep,
-    maxAttempts: reviewerDependencies.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
-    retryDelaysMs: reviewerDependencies.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS,
   }
 
   return async (details, _query, log) => {
-    let startedAt = 0
+    const startedAt = dependencies.now()
     try {
-      startedAt = dependencies.now()
       if (runtime.circuitBreaker.isOpen()) {
         const reason =
           'Automatic permission review rejected too many requests in this turn. Ask the user for explicit approval before retrying.'
@@ -334,7 +303,7 @@ export function createPermissionReviewer(
       }
 
       const result = await runReview(runtime, details, dependencies)
-      const durationMs = elapsedMilliseconds(dependencies.now, startedAt)
+      const durationMs = Math.max(0, dependencies.now() - startedAt)
       if ('category' in result) {
         runtime.circuitBreaker.recordNonDenial()
         writeFailure(log, runtime, details, result, durationMs)
@@ -364,18 +333,10 @@ export function createPermissionReviewer(
         reason: `Automatic permission review denied this action (risk: ${assessment.riskLevel}, authorization: ${assessment.userAuthorization}): ${assessment.rationale}`,
       }
     } catch {
-      try {
-        runtime.circuitBreaker.recordNonDenial()
-      } catch {
-        // Returning defer remains the safe fallback even if local state is unavailable.
-      }
-      tryWriteFailure(
-        log,
-        runtime,
-        details,
-        { category: 'internal-error' },
-        elapsedMilliseconds(dependencies.now, startedAt),
-      )
+      // The chain does not isolate a link that throws, so every internal failure
+      // has to leave here as a verdict.
+      runtime.circuitBreaker.recordNonDenial()
+      writeFailure(log, runtime, details, { category: 'internal-error' }, Math.max(0, dependencies.now() - startedAt))
       return { kind: 'defer' }
     }
   }

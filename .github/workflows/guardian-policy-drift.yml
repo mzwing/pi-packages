@@ -1,0 +1,99 @@
+name: Guardian Policy Drift
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+concurrency: ${{ github.workflow }}
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  DRIFT_LABEL: guardian-policy-drift
+
+jobs:
+  drift:
+    name: Check upstream Guardian policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          check-latest: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm i --frozen-lockfile
+
+      # The script exits non-zero when upstream moved, which is a finding rather
+      # than a failure — capture the code so the reporting step still runs.
+      - name: Check for upstream movement
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          pnpm --silent --filter @mzwing/pi-permission-auto-review sync:policy > report.txt 2>&1
+          echo "drifted=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat report.txt
+
+      - name: Summarize
+        run: |
+          {
+            echo '## Guardian policy drift'
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # One open issue at a time, edited in place rather than commented on, so an
+      # unported drift does not accumulate a weekly comment thread.
+      - name: Open or refresh the drift issue
+        if: steps.check.outputs.drifted != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo 'Upstream OpenAI Codex Guardian policy has moved past the revision'
+            echo '`src/upstream.ts` is pinned to.'
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+            echo
+            echo 'Port what applies into the adapted text in'
+            echo '`packages/pi-permission-auto-review/src/policy.ts`, then run'
+            echo '`pnpm --filter @mzwing/pi-permission-auto-review sync:policy --pin`.'
+            echo 'Do not pin before porting: `POLICY_REVISION` is written to the permission'
+            echo 'review log, so a pin that outruns the text is a false audit record.'
+            echo
+            echo "_Refreshed by [this run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+          } > body.md
+
+          gh label create "$DRIFT_LABEL" \
+            --description 'Upstream Codex Guardian policy moved past the pinned revision' \
+            --color FBCA04 2>/dev/null || true
+
+          existing=$(gh issue list --label "$DRIFT_LABEL" --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file body.md
+            echo "Refreshed issue #$existing"
+          else
+            gh issue create \
+              --title 'Upstream Codex Guardian policy has moved' \
+              --label "$DRIFT_LABEL" \
+              --body-file body.md
+          fi

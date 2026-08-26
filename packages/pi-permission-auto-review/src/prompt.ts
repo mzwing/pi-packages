@@ -17,7 +17,10 @@ function normalizePermissionDetails(details: PromptPermissionDetails): Record<st
     'requestId',
     'source',
     'agentName',
-    'message',
+    // The complete structured description of the ask (ADR 0011 §2), which
+    // replaced the pre-rendered `message` sentence in 26.0.0. Every consumer is
+    // a render over it; this one elides under MAX_ACTION_TOKENS below.
+    'payload',
     'toolCallId',
     'toolName',
     'skillName',
@@ -51,10 +54,8 @@ export function buildReviewPrompt(
     transcript.entries.length > 0
       ? transcript.entries.join('\n')
       : JSON.stringify({ source: 'metadata', retainedEntries: 0 })
-  const omission =
-    transcript.omittedCount > 0
-      ? `\n${JSON.stringify({ source: 'metadata', omittedEntries: transcript.omittedCount })}`
-      : ''
+  const omittedEntries = transcript.stats.transcriptEntriesOmitted
+  const omission = omittedEntries > 0 ? `\n${JSON.stringify({ source: 'metadata', omittedEntries })}` : ''
   const action = truncateToApproximateTokens(
     JSON.stringify(normalizePermissionDetails(details), null, 2),
     MAX_ACTION_TOKENS,

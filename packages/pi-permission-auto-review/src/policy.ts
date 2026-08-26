@@ -1,12 +1,20 @@
 import type { AutoReviewConfig } from './config.js'
+import { PI_ADAPTATION_REVISION, UPSTREAM_REVISION } from './upstream.js'
 
-// Pi adaptation of OpenAI Codex Guardian's policy_template.md and policy.md at:
-// https://github.com/openai/codex/tree/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian
+// Pi adaptation of the OpenAI Codex Guardian sources listed in ./upstream.ts.
+// This text is a rewrite, not a copy: Pi's reviewer has no tools and a different
+// evidence-provenance model, so upstream wording cannot be dropped in
+// mechanically. Run `pnpm sync:policy` to learn when upstream moved and which
+// commits to read, port what applies here by hand, then `--pin` the revision.
+//
 // Pi-specific changes are limited to transcript provenance, the tool-free
 // review environment, configurable operator policy composition, and output
-// compatibility with parseReviewAssessment(). The policy is bundled so review
-// behavior never depends on a runtime network fetch.
-export const POLICY_REVISION = 'openai-codex/c4f42d161ae44a8d696ee9fb595709661979d187+pi1'
+// compatibility with parseReviewAssessment(). Upstream's `Execution Environment`
+// section and its MCP `connected_account_email` rule are deliberately dropped:
+// both describe Codex's sandbox and tool surface, which Pi's reviewer does not
+// have. The policy is bundled so review behavior never depends on a runtime
+// network fetch.
+export const POLICY_REVISION: string = `openai-codex/${UPSTREAM_REVISION}+pi${PI_ADAPTATION_REVISION}`
 
 const FIXED_REVIEW_PROTOCOL = `
 You are judging one planned coding-agent action as a read-only automatic permission reviewer.

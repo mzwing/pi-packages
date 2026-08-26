@@ -1,4 +1,4 @@
-import type { AutoReviewConfigStore, AutoReviewConfigScope, AutoReviewScopeSnapshot } from './config-store.js'
+import type { AutoReviewConfigStore, AutoReviewConfigScope } from './config-store.js'
 import type { AutoReviewConfig, AutoReviewConfigFile, LoadConfigResult } from './config.js'
 import type { ExtensionAPI, ExtensionCommandContext, ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS, autoReviewConfigSchema } from './config.js'
@@ -45,27 +45,15 @@ interface ConfigLayers {
   project: AutoReviewConfigFile
 }
 
-interface ConfigView {
-  config: AutoReviewConfig
-  layers: ConfigLayers
-}
-
-function hasField(config: AutoReviewConfigFile, field: ConfigField): boolean {
-  return Object.hasOwn(config, field)
-}
-
-function fieldValue(config: AutoReviewConfigFile | AutoReviewConfig, field: ConfigField): unknown {
-  return config[field]
-}
-
-function resolveView(layers: ConfigLayers): ConfigView {
-  const merged = autoReviewConfigSchema.safeParse({
-    ...layers.global,
-    ...layers.project,
-  })
+/**
+ * Effective values for display. The draft being edited may still violate the
+ * cross-field policy invariant, so this resolves layer precedence directly
+ * rather than through the schema, which rejects the whole object.
+ */
+function mergeLayers(layers: ConfigLayers): AutoReviewConfig {
   const additionalPolicy =
     layers.project.additionalPolicy ?? layers.global.additionalPolicy ?? DEFAULT_CONFIG.additionalPolicy
-  const fallback: AutoReviewConfig = {
+  return {
     provider: layers.project.provider ?? layers.global.provider ?? DEFAULT_CONFIG.provider,
     model: layers.project.model ?? layers.global.model ?? DEFAULT_CONFIG.model,
     reasoning: layers.project.reasoning ?? layers.global.reasoning ?? DEFAULT_CONFIG.reasoning,
@@ -76,17 +64,13 @@ function resolveView(layers: ConfigLayers): ConfigView {
       DEFAULT_CONFIG.includeBaselinePolicy,
     ...(additionalPolicy === undefined ? {} : { additionalPolicy }),
   }
-  return {
-    config: merged.success ? merged.data : fallback,
-    layers,
-  }
 }
 
 function resolveOrigin(layers: ConfigLayers, field: ConfigField): AutoReviewConfigScope | 'default' {
-  if (hasField(layers.project, field)) {
+  if (Object.hasOwn(layers.project, field)) {
     return 'project'
   }
-  if (hasField(layers.global, field)) {
+  if (Object.hasOwn(layers.global, field)) {
     return 'global'
   }
   return 'default'
@@ -102,67 +86,10 @@ function formatFieldValue(field: ConfigField, value: unknown): string {
   return String(value ?? 'not set')
 }
 
-function buildLayers(
-  selected: AutoReviewScopeSnapshot,
-  other: AutoReviewScopeSnapshot,
-  draft: AutoReviewConfigFile,
-): ConfigLayers | undefined {
-  if (!selected.valid || !other.valid) {
-    return undefined
-  }
-  if (selected.scope === 'global') {
-    return { global: draft, project: other.config }
-  }
-  return { global: other.config, project: draft }
-}
-
 function removeField(config: AutoReviewConfigFile, field: ConfigField): AutoReviewConfigFile {
   const next = { ...config }
-  switch (field) {
-    case 'provider':
-      delete next.provider
-      break
-    case 'model':
-      delete next.model
-      break
-    case 'reasoning':
-      delete next.reasoning
-      break
-    case 'timeoutMs':
-      delete next.timeoutMs
-      break
-    case 'includeBaselinePolicy':
-      delete next.includeBaselinePolicy
-      break
-    case 'additionalPolicy':
-      delete next.additionalPolicy
-      break
-  }
+  delete next[field]
   return next
-}
-
-function setField(
-  config: AutoReviewConfigFile,
-  field: ConfigField,
-  value: string | number | boolean,
-): AutoReviewConfigFile {
-  switch (field) {
-    case 'provider':
-      return { ...config, provider: String(value) }
-    case 'model':
-      return { ...config, model: String(value) }
-    case 'reasoning':
-      return {
-        ...config,
-        reasoning: REASONING_LEVELS.find(level => level === value),
-      }
-    case 'timeoutMs':
-      return { ...config, timeoutMs: Number(value) }
-    case 'includeBaselinePolicy':
-      return { ...config, includeBaselinePolicy: Boolean(value) }
-    case 'additionalPolicy':
-      return { ...config, additionalPolicy: String(value) }
-  }
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -200,29 +127,30 @@ async function editStringField(
   ctx: ExtensionCommandContext,
   draft: AutoReviewConfigFile,
   field: 'provider' | 'model',
-  view: ConfigView,
+  effective: AutoReviewConfig,
   registry: ModelRegistry,
 ): Promise<AutoReviewConfigFile> {
-  const currentValue = String(fieldValue(view.config, field))
-  const effectiveProvider = String(fieldValue(view.config, 'provider'))
   const knownValues =
     field === 'provider'
       ? registry.getAll().map(model => model.provider)
       : registry
           .getAll()
-          .filter(model => model.provider === effectiveProvider)
+          .filter(model => model.provider === effective.provider)
           .map(model => model.id)
   if (field === 'provider') {
     knownValues.push(DEFAULT_PROVIDER)
-  } else if (effectiveProvider === DEFAULT_PROVIDER) {
+  } else if (effective.provider === DEFAULT_PROVIDER) {
     knownValues.push(DEFAULT_MODEL)
   }
 
-  const selected = await chooseStringValue(ctx, `Configure ${fieldLabels[field]}`, knownValues, currentValue)
+  const selected = await chooseStringValue(ctx, `Configure ${fieldLabels[field]}`, knownValues, effective[field])
   if (selected === undefined) {
     return draft
   }
-  return selected.kind === 'inherit' ? removeField(draft, field) : setField(draft, field, selected.value)
+  if (selected.kind === 'inherit') {
+    return removeField(draft, field)
+  }
+  return field === 'provider' ? { ...draft, provider: selected.value } : { ...draft, model: selected.value }
 }
 
 async function editReasoning(ctx: ExtensionCommandContext, draft: AutoReviewConfigFile): Promise<AutoReviewConfigFile> {
@@ -231,7 +159,7 @@ async function editReasoning(ctx: ExtensionCommandContext, draft: AutoReviewConf
     return removeField(draft, 'reasoning')
   }
   const reasoning = REASONING_LEVELS.find(level => level === selected)
-  return reasoning === undefined ? draft : setField(draft, 'reasoning', reasoning)
+  return reasoning === undefined ? draft : { ...draft, reasoning }
 }
 
 async function editTimeout(
@@ -251,12 +179,12 @@ async function editTimeout(
   if (source === undefined) {
     return draft
   }
-  const value = Number(source.trim())
-  if (!Number.isInteger(value) || value < 1 || value > 300_000) {
+  const timeoutMs = Number(source.trim())
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
     ctx.ui.notify('timeoutMs must be an integer between 1 and 300000.', 'warning')
     return draft
   }
-  return setField(draft, 'timeoutMs', value)
+  return { ...draft, timeoutMs }
 }
 
 async function editBaselinePolicy(
@@ -267,11 +195,8 @@ async function editBaselinePolicy(
   if (selected === INHERIT) {
     return removeField(draft, 'includeBaselinePolicy')
   }
-  if (selected === 'Enabled') {
-    return setField(draft, 'includeBaselinePolicy', true)
-  }
-  if (selected === 'Disabled') {
-    return setField(draft, 'includeBaselinePolicy', false)
+  if (selected === 'Enabled' || selected === 'Disabled') {
+    return { ...draft, includeBaselinePolicy: selected === 'Enabled' }
   }
   return draft
 }
@@ -292,18 +217,15 @@ async function editAdditionalPolicy(
   if (value === undefined) {
     return draft
   }
-  const normalized = value.trim()
-  return normalized.length === 0
-    ? removeField(draft, 'additionalPolicy')
-    : setField(draft, 'additionalPolicy', normalized)
+  const additionalPolicy = value.trim()
+  return additionalPolicy.length === 0 ? removeField(draft, 'additionalPolicy') : { ...draft, additionalPolicy }
 }
 
-function formatMenuOptions(view: ConfigView, scope: AutoReviewConfigScope): string[] {
+function formatMenuOptions(effective: AutoReviewConfig, layers: ConfigLayers, scope: AutoReviewConfigScope): string[] {
   return configFields.map(field => {
-    const value = fieldValue(view.config, field)
-    const origin = resolveOrigin(view.layers, field)
-    const scopeState = hasField(view.layers[scope], field) ? 'override' : 'inherit'
-    return `${fieldLabels[field]}: ${formatFieldValue(field, value)} (source: ${origin}; ${scope}: ${scopeState})`
+    const origin = resolveOrigin(layers, field)
+    const scopeState = Object.hasOwn(layers[scope], field) ? 'override' : 'inherit'
+    return `${fieldLabels[field]}: ${formatFieldValue(field, effective[field])} (source: ${origin}; ${scope}: ${scopeState})`
   })
 }
 
@@ -349,12 +271,10 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
 
   let draft: AutoReviewConfigFile = { ...selected.config }
   while (true) {
-    const layers = buildLayers(selected, other, draft)
-    if (layers === undefined) {
-      return
-    }
-    const view = resolveView(layers)
-    const fieldOptions = formatMenuOptions(view, scope)
+    const layers: ConfigLayers =
+      scope === 'global' ? { global: draft, project: other.config } : { global: other.config, project: draft }
+    const effective = mergeLayers(layers)
+    const fieldOptions = formatMenuOptions(effective, layers, scope)
     const selectedOption = await ctx.ui.select(`Permission auto-review settings (${scope})`, [
       ...fieldOptions,
       SAVE,
@@ -388,19 +308,19 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
     switch (field) {
       case 'provider':
       case 'model':
-        draft = await editStringField(ctx, draft, field, view, ctx.modelRegistry)
+        draft = await editStringField(ctx, draft, field, effective, ctx.modelRegistry)
         break
       case 'reasoning':
         draft = await editReasoning(ctx, draft)
         break
       case 'timeoutMs':
-        draft = await editTimeout(ctx, draft, view.config.timeoutMs)
+        draft = await editTimeout(ctx, draft, effective.timeoutMs)
         break
       case 'includeBaselinePolicy':
         draft = await editBaselinePolicy(ctx, draft)
         break
       case 'additionalPolicy':
-        draft = await editAdditionalPolicy(ctx, draft, view.config.additionalPolicy)
+        draft = await editAdditionalPolicy(ctx, draft, effective.additionalPolicy)
         break
     }
   }
@@ -428,7 +348,7 @@ function showConfig(ctx: ExtensionCommandContext, controller: AutoReviewCommandC
 
   const fields = configFields.map(field => {
     const origin = resolveOrigin(layers, field)
-    return `${field}=${formatFieldValue(field, fieldValue(active, field))} (${origin})`
+    return `${field}=${formatFieldValue(field, active[field])} (${origin})`
   })
   ctx.ui.notify(
     `permission-auto-review:\n${fields.join('\n')}\nglobal=${paths.globalPath}\nproject=${paths.projectPath}`,

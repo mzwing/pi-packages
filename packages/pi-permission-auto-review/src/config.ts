@@ -121,7 +121,8 @@ export function getAutoReviewConfigPaths(
   }
 }
 
-function defaultReadFile(path: string): string | undefined {
+/** Reads a config file, reporting a missing one as `undefined` rather than an error. */
+export function readConfigFile(path: string): string | undefined {
   try {
     return readFileSync(path, 'utf8')
   } catch (error) {
@@ -201,7 +202,7 @@ function readScope(
 
 export function loadAutoReviewConfig(options: LoadConfigOptions): LoadConfigResult {
   const { globalPath, projectPath } = getAutoReviewConfigPaths(options.cwd, options.agentDir)
-  const readFile = options.readFile ?? defaultReadFile
+  const readFile = options.readFile ?? readConfigFile
   const issues: ConfigIssue[] = []
   const globalConfig = readScope(globalPath, readFile, issues)
   const projectConfig = readScope(projectPath, readFile, issues)

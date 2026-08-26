@@ -32,7 +32,6 @@ export interface TranscriptStats {
 
 export interface RenderedTranscript {
   entries: string[]
-  omittedCount: number
   stats: TranscriptStats
 }
 
@@ -430,7 +429,6 @@ export function renderTranscript(sessionEntries: SessionEntry[]): RenderedTransc
 
   return {
     entries: retained.map(renderTranscriptEntry),
-    omittedCount: stats.transcriptEntriesOmitted,
     stats,
   }
 }

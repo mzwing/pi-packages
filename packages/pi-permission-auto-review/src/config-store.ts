@@ -1,5 +1,5 @@
 import type { AutoReviewConfigFile, AutoReviewConfigPaths, ConfigIssue, LoadConfigResult } from './config.js'
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import {
   CONFIG_SCHEMA_URL,
@@ -7,6 +7,7 @@ import {
   getAutoReviewConfigPaths,
   loadAutoReviewConfig,
   parseAutoReviewConfigFile,
+  readConfigFile,
   validateAutoReviewConfigFile,
 } from './config.js'
 
@@ -53,21 +54,8 @@ export interface AutoReviewConfigStoreOptions {
   fileSystem?: AutoReviewConfigFileSystem
 }
 
-function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && 'code' in error && error.code === code
-}
-
 const defaultFileSystem: AutoReviewConfigFileSystem = {
-  readFile(path) {
-    try {
-      return readFileSync(path, 'utf8')
-    } catch (error) {
-      if (isNodeError(error, 'ENOENT')) {
-        return undefined
-      }
-      throw error
-    }
-  },
+  readFile: readConfigFile,
   writeFile(path, source) {
     writeFileSync(path, source, 'utf8')
   },
@@ -256,10 +244,8 @@ export class AutoReviewConfigStore {
   private cleanupTempFile(tempPath: string): void {
     try {
       this.fileSystem.unlink(tempPath)
-    } catch (error) {
-      if (!isNodeError(error, 'ENOENT')) {
-        // The original write error is more actionable than a best-effort cleanup failure.
-      }
+    } catch {
+      // The original write error is more actionable than a best-effort cleanup failure.
     }
   }
 }

@@ -169,7 +169,6 @@ describe('transcript rendering', () => {
     expect(rendered.entries[0]).toContain('Initial instruction')
     expect(rendered.entries.at(-2)).toContain('user_interaction:ask_user_question')
     expect(rendered.entries.at(-1)).toContain('Latest instruction')
-    expect(rendered.omittedCount).toBe(16)
     expect(rendered.stats).toEqual({
       transcriptEntriesRetained: 43,
       transcriptEntriesOmitted: 16,

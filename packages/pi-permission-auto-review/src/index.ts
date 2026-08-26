@@ -14,7 +14,6 @@ export {
 } from './config.js'
 export type { AutoReviewConfig, ConfigIssue, LoadConfigOptions, LoadConfigResult } from './config.js'
 export { createAutoReviewExtension } from './extension.js'
-export type { AutoReviewExtensionDependencies } from './extension.js'
 
 export default function permissionAutoReviewExtension(pi: ExtensionAPI): void {
   createAutoReviewExtension(pi)

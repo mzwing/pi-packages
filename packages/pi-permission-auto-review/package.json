@@ -53,16 +53,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
+    "sync:policy": "node --experimental-strip-types scripts/sync-guardian-policy.ts",
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@mzwing/pi-polyfill": "workspace:^",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
-    "@gotgenes/pi-permission-system": "20.10.0",
+    "@gotgenes/pi-permission-system": "27.0.1",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
@@ -71,7 +71,7 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": "catalog:pi-peer",
     "@earendil-works/pi-coding-agent": "catalog:pi-peer",
-    "@gotgenes/pi-permission-system": "^20.10.0"
+    "@gotgenes/pi-permission-system": "^27.0.0"
   },
   "engines": {
     "node": ">=24"

@@ -49,7 +49,6 @@ describe('resolveReviewModel', () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        synthesized: true,
         model: {
           id: 'codex-auto-review',
           api: 'openai-codex-responses',

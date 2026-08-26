@@ -12,6 +12,22 @@ Ours is mostly specialized for OpenAI's `codex-auto-review` model, which is trai
 
 The bundled baseline is a Pi-specific adaptation of OpenAI Codex Guardian's [`policy_template.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy_template.md) and [`policy.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy.md) at revision [`c4f42d161ae44a8d696ee9fb595709661979d187`](https://github.com/openai/codex/commit/c4f42d161ae44a8d696ee9fb595709661979d187). It is bundled at build time; the extension never fetches policy text while reviewing an action.
 
+Upstream's `Execution Environment` section and its MCP `connected_account_email` rule are deliberately left out: both describe Codex's sandbox and tool surface, which Pi's tool-free reviewer does not have. Upstream's `node_repl_policy.md` is likewise out of scope — it governs `node_repl` / `cua_repl` computer-use tools that Pi does not expose.
+
+### Updating the bundled policy
+
+`src/upstream.ts` records which Codex files the adaptation tracks and the revision it was last reconciled against. `pnpm sync:policy` reports whether upstream has moved since:
+
+```bash
+pnpm sync:policy                # report only; exits non-zero when upstream moved
+pnpm sync:policy --ref v1.2.3   # resolve against a tag, branch, or commit
+pnpm sync:policy --pin          # record the new revision, once you have ported it
+```
+
+A run that finds movement lists every commit touching the tracked files since the pinned revision, with links. Port what applies into `src/policy.ts` by hand — the adapted text is a rewrite, not a copy, because Pi's reviewer has no tools and reads a different evidence-provenance model, so upstream wording cannot be dropped in mechanically.
+
+Only re-run with `--pin` once that porting is done. `POLICY_REVISION` is written to the permission review log, so a pin that outruns the text would be a false audit record. Bump `PI_ADAPTATION_REVISION` as well when you reword anything Pi-specific. Set `GITHUB_TOKEN` to lift GitHub's anonymous rate limit.
+
 ## Install
 
 ```bash
@@ -19,7 +35,9 @@ pi install npm:@gotgenes/pi-permission-system # dependency
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
-Pi 0.80.10 and Pi 0.81.x are supported. The extension uses `@mzwing/pi-polyfill` transitively for provider lookup on Pi 0.80.10; do not install the polyfill as a separate Pi extension.
+Pi 0.84.2+ (0.84.x and 0.85.x) and `@gotgenes/pi-permission-system` 27.x are required.
+
+The authorizer registers itself against the service keyed by its own session id, so a subagent's reviewer lands in the node whose gates actually read it.
 
 ## Enable
 

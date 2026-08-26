@@ -8,8 +8,12 @@ import type {
   SimpleStreamOptions,
 } from '@earendil-works/pi-ai'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
-import type { AuthorizerLog, PermissionQuery, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
-import { ModelRegistry } from '@earendil-works/pi-coding-agent'
+import type {
+  AuthorizerLog,
+  PermissionQuery,
+  PromptPayload,
+  PromptPermissionDetails,
+} from '@gotgenes/pi-permission-system'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DenialCircuitBreaker } from '../src/circuit-breaker.js'
 import { autoReviewConfigSchema } from '../src/config.js'
@@ -132,12 +136,31 @@ function userInteractionEntries(): SessionEntry[] {
   ]
 }
 
+function promptPayload(overrides: Partial<PromptPayload> = {}): PromptPayload {
+  return {
+    kind: 'bash',
+    request: {
+      requester: { agentName: null, forwarded: false, sessionId: null },
+      surface: 'bash',
+      toolName: 'bash',
+      invokedToolName: null,
+      value: 'pnpm publish',
+      matchedPattern: 'pnpm publish*',
+      commandContext: null,
+      executedUnit: null,
+    },
+    evidence: [{ label: 'command', text: 'pnpm publish', detail: null }],
+    annotations: [],
+    ...overrides,
+  }
+}
+
 function details(overrides: Partial<PromptPermissionDetails> = {}): PromptPermissionDetails {
   return {
     requestId: 'request-1',
     source: 'tool_call',
     agentName: null,
-    message: 'Run command',
+    payload: promptPayload(),
     toolName: 'bash',
     command: 'pnpm publish',
     surface: 'bash',
@@ -162,7 +185,7 @@ interface HarnessOptions {
   auth?: Awaited<ReturnType<ReviewModelRegistry['getApiKeyAndHeaders']>>
   timeoutMs?: number
   resultFactory?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
-  providerLookup?: 'native' | 'legacy' | 'missing' | 'throwing'
+  providerLookup?: 'native' | 'missing' | 'throwing'
   sessionEntries?: SessionEntry[]
 }
 
@@ -207,28 +230,13 @@ function createHarness(options: HarnessOptions = {}) {
     getAll: vi.fn(() => [model]),
     getApiKeyAndHeaders,
   }
-  const providerLookup = vi.fn(() => provider)
   let registry: ReviewModelRegistry
   switch (options.providerLookup ?? 'native') {
     case 'native':
-      registry = { ...registryBase, getProvider: providerLookup }
-      break
-    case 'legacy':
-      registry = new ModelRegistry({
-        getProvider: providerLookup,
-        getModel: vi.fn(() => model),
-        getModels: vi.fn(() => [model]),
-        getAuth: vi.fn(async () => ({
-          auth: {
-            apiKey: 'secret-key',
-            headers: { 'x-review': 'enabled' },
-          },
-          env: { REVIEW_REGION: 'test' },
-        })),
-      } as never)
+      registry = { ...registryBase, getProvider: vi.fn(() => provider) }
       break
     case 'missing':
-      registry = registryBase
+      registry = { ...registryBase, getProvider: vi.fn(() => undefined) }
       break
     case 'throwing':
       registry = {
@@ -254,7 +262,6 @@ function createHarness(options: HarnessOptions = {}) {
     },
     {
       now: () => 0,
-      retryDelaysMs: [0, 0],
       sleep: async () => Promise.resolve(),
     },
   )
@@ -264,7 +271,6 @@ function createHarness(options: HarnessOptions = {}) {
     circuitBreaker,
     getApiKeyAndHeaders,
     getBranch,
-    registry,
     streamSimple,
   }
 }
@@ -336,15 +342,30 @@ describe('permission reviewer', () => {
     expect(userPrompt).not.toContain('untrusted presentation text')
   })
 
-  it('uses the Pi 0.80.10 provider lookup polyfill', async () => {
-    const harness = createHarness({ providerLookup: 'legacy' })
+  it('sends the structured prompt payload as the permission request', async () => {
+    const harness = createHarness()
 
-    expect(harness.registry).toBeInstanceOf(ModelRegistry)
-    expect('getProvider' in harness.registry).toBe(false)
-    await expect(harness.authorize(details(), query, createLog())).resolves.toEqual({
-      kind: 'allow',
-    })
-    expect(harness.streamSimple).toHaveBeenCalledOnce()
+    await expect(
+      harness.authorize(
+        details({
+          payload: promptPayload({
+            evidence: [{ label: 'command', text: 'pnpm publish', detail: 'runs from /project' }],
+            annotations: [{ source: 'risk-annotator', text: 'publishes to a public registry' }],
+          }),
+        }),
+        query,
+        createLog(),
+      ),
+    ).resolves.toEqual({ kind: 'allow' })
+
+    const [, context] = harness.streamSimple.mock.calls[0] ?? []
+    const userPrompt = (context as { messages: Array<{ content: string }> }).messages[0]?.content
+    const request = userPrompt?.split('>>> PERMISSION REQUEST START')[1]
+
+    expect(request).toContain('"kind": "bash"')
+    expect(request).toContain('"matchedPattern": "pnpm publish*"')
+    expect(request).toContain('"detail": "runs from /project"')
+    expect(request).toContain('"source": "risk-annotator"')
   })
 
   it('returns a teaching denial without persisting the rationale', async () => {
@@ -418,16 +439,6 @@ describe('permission reviewer', () => {
     expect(throwingLog.review.mock.calls[0]?.[1]).toMatchObject({
       errorCategory: 'internal-error',
     })
-  })
-
-  it('defers when review logging throws', async () => {
-    const harness = createHarness()
-    const log = createLog()
-    log.review.mockImplementation(() => {
-      throw new Error('log unavailable')
-    })
-
-    await expect(harness.authorize(details(), query, log)).resolves.toEqual({ kind: 'defer' })
   })
 
   it('opens the per-turn circuit after three consecutive denials', async () => {

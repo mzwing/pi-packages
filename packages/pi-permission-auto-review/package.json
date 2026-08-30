@@ -57,12 +57,12 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "zod": "4.4.3"
+    "zod": "4.5.2"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
-    "@gotgenes/pi-permission-system": "27.0.1",
+    "@gotgenes/pi-permission-system": "28.0.0",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
@@ -71,7 +71,7 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": "catalog:pi-peer",
     "@earendil-works/pi-coding-agent": "catalog:pi-peer",
-    "@gotgenes/pi-permission-system": "^27.0.0"
+    "@gotgenes/pi-permission-system": "^27.0.0 || ^28.0.0"
   },
   "engines": {
     "node": ">=24"

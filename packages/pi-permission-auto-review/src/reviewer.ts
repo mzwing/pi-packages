@@ -290,7 +290,7 @@ export function createPermissionReviewer(
     try {
       if (runtime.circuitBreaker.isOpen()) {
         const reason =
-          'Automatic permission review rejected too many requests in this turn. Ask the user for explicit approval before retrying.'
+          'Too many denials this turn; further requests are refused unreviewed until the next turn. Ask the user for explicit approval before retrying'
         log.review(CIRCUIT_OPEN_EVENT, {
           requestId: details.requestId,
           provider: runtime.config.provider,
@@ -328,9 +328,12 @@ export function createPermissionReviewer(
       }
 
       runtime.circuitBreaker.recordDenied()
+      // The reason is rendered after the host's own attribution sentence
+      // ("The 'auto-review' authorizer denied this ..."), so it carries only
+      // what that sentence does not: why, and the two grades behind the call.
       return {
         kind: 'deny',
-        reason: `Automatic permission review denied this action (risk: ${assessment.riskLevel}, authorization: ${assessment.userAuthorization}): ${assessment.rationale}`,
+        reason: `${assessment.rationale} (risk: ${assessment.riskLevel}, user authorization: ${assessment.userAuthorization})`,
       }
     } catch {
       // The chain does not isolate a link that throws, so every internal failure

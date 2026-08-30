@@ -8,34 +8,11 @@ export const EXTENSION_ID = 'pi-permission-auto-review'
 export const AUTHORIZER_NAME = 'auto-review'
 export const DEFAULT_PROVIDER = 'openai-codex'
 export const DEFAULT_MODEL = 'codex-auto-review'
-export const DEFAULT_TIMEOUT_MS = 90_000
+const DEFAULT_TIMEOUT_MS = 90_000
 export const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-permission-auto-review/schemas/config.schema.json'
 
 export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
-
-type AutoReviewConfigSchema = z.ZodObject<
-  {
-    $schema: z.ZodOptional<z.ZodString>
-    additionalPolicy: z.ZodOptional<z.ZodString>
-    provider: z.ZodDefault<z.ZodString>
-    model: z.ZodDefault<z.ZodString>
-    reasoning: z.ZodDefault<
-      z.ZodEnum<{
-        off: 'off'
-        minimal: 'minimal'
-        low: 'low'
-        medium: 'medium'
-        high: 'high'
-        xhigh: 'xhigh'
-        max: 'max'
-      }>
-    >
-    timeoutMs: z.ZodDefault<z.ZodNumber>
-    includeBaselinePolicy: z.ZodDefault<z.ZodBoolean>
-  },
-  z.core.$strict
->
 
 const configFileShape = {
   $schema: z.string().min(1).optional(),
@@ -49,7 +26,7 @@ const configFileShape = {
 
 const autoReviewConfigFileSchema = z.strictObject(configFileShape)
 
-export const autoReviewConfigSchema: AutoReviewConfigSchema = z
+const autoReviewConfigSchema = z
   .strictObject({
     ...configFileShape,
     provider: z.string().trim().min(1).default(DEFAULT_PROVIDER),
@@ -68,7 +45,21 @@ export const autoReviewConfigSchema: AutoReviewConfigSchema = z
     }
   })
 
-export type AutoReviewConfig = z.infer<typeof autoReviewConfigSchema>
+/**
+ * Hand-written because `isolatedDeclarations` cannot emit a `z.infer` of a module-private schema.
+ * `DEFAULT_CONFIG` below is the assignability check that keeps the two in step.
+ */
+export interface AutoReviewConfig {
+  $schema?: string | undefined
+  provider: string
+  model: string
+  reasoning: (typeof REASONING_LEVELS)[number]
+  timeoutMs: number
+  includeBaselinePolicy: boolean
+  additionalPolicy?: string | undefined
+}
+
+export const DEFAULT_CONFIG: AutoReviewConfig = autoReviewConfigSchema.parse({})
 
 export interface AutoReviewConfigFile {
   $schema?: string | undefined

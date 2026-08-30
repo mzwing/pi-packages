@@ -16,7 +16,7 @@ import type {
 } from '@gotgenes/pi-permission-system'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DenialCircuitBreaker } from '../src/circuit-breaker.js'
-import { autoReviewConfigSchema } from '../src/config.js'
+import { DEFAULT_CONFIG } from '../src/config.js'
 import { createPermissionReviewer } from '../src/reviewer.js'
 
 function createModel(): Model<Api> {
@@ -251,11 +251,12 @@ function createHarness(options: HarnessOptions = {}) {
   const getBranch = vi.fn(() => options.sessionEntries ?? [userEntry()])
   const authorize = createPermissionReviewer(
     {
-      config: autoReviewConfigSchema.parse({
+      config: {
+        ...DEFAULT_CONFIG,
         provider: 'custom-review',
         model: 'review-model',
         timeoutMs: options.timeoutMs ?? 90_000,
-      }),
+      },
       registry,
       sessionManager: { getBranch },
       circuitBreaker,

@@ -81,7 +81,8 @@ function truncateToCharacters(text: string, maxCharacters: number): string {
   const available = Math.max(0, maxCharacters - tag.length)
   const headLength = Math.floor(available * 0.7)
   const tailLength = available - headLength
-  return `${text.slice(0, headLength)}${tag}${text.slice(-tailLength)}`
+  // `slice(-0)` is `slice(0)`, which would return the whole string when the budget leaves no tail.
+  return `${text.slice(0, headLength)}${tag}${text.slice(text.length - tailLength)}`
 }
 
 export function truncateToApproximateTokens(text: string, maxTokens: number): string {

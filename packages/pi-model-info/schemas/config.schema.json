@@ -1,0 +1,543 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-model-info/schemas/config.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providers": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "catalogProvider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "costMultiplier": {
+            "type": "number",
+            "minimum": 0
+          },
+          "costPolicy": {
+            "type": "string",
+            "enum": ["catalog", "zero", "keep"]
+          },
+          "contextWindowPolicy": {
+            "type": "string",
+            "enum": ["catalog", "min", "keep"]
+          },
+          "capabilityPolicy": {
+            "type": "string",
+            "enum": ["catalog", "widen", "keep"]
+          },
+          "useCatalogName": {
+            "type": "boolean"
+          },
+          "mapThinkingLevels": {
+            "type": "boolean"
+          },
+          "allowDynamic": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "prefixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "suffixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "alias": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "override": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reasoning": {
+                      "type": "boolean"
+                    },
+                    "input": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": ["text", "image"]
+                      }
+                    },
+                    "cost": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "output": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheRead": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheWrite": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "tiers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "input": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "output": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "cacheRead": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "cacheWrite": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "inputTokensAbove": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": ["input", "output", "cacheRead", "cacheWrite", "inputTokensAbove"],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "contextWindow": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "maxTokens": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "thinkingLevelMap": {
+                      "type": "object",
+                      "properties": {
+                        "off": {
+                          "type": ["string", "null"]
+                        },
+                        "minimal": {
+                          "type": ["string", "null"]
+                        },
+                        "low": {
+                          "type": ["string", "null"]
+                        },
+                        "medium": {
+                          "type": ["string", "null"]
+                        },
+                        "high": {
+                          "type": ["string", "null"]
+                        },
+                        "xhigh": {
+                          "type": ["string", "null"]
+                        },
+                        "max": {
+                          "type": ["string", "null"]
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "compat": {}
+                  },
+                  "additionalProperties": false
+                },
+                "skip": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "aliases": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "models": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "suffixes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "alias": {
+            "type": "string",
+            "minLength": 1
+          },
+          "override": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reasoning": {
+                "type": "boolean"
+              },
+              "input": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["text", "image"]
+                }
+              },
+              "cost": {
+                "type": "object",
+                "properties": {
+                  "input": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "output": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cacheRead": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cacheWrite": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "tiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "output": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheRead": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheWrite": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "inputTokensAbove": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["input", "output", "cacheRead", "cacheWrite", "inputTokensAbove"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxTokens": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "thinkingLevelMap": {
+                "type": "object",
+                "properties": {
+                  "off": {
+                    "type": ["string", "null"]
+                  },
+                  "minimal": {
+                    "type": ["string", "null"]
+                  },
+                  "low": {
+                    "type": ["string", "null"]
+                  },
+                  "medium": {
+                    "type": ["string", "null"]
+                  },
+                  "high": {
+                    "type": ["string", "null"]
+                  },
+                  "xhigh": {
+                    "type": ["string", "null"]
+                  },
+                  "max": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "compat": {}
+            },
+            "additionalProperties": false
+          },
+          "skip": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["prefix", "suffix"]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "override": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reasoning": {
+                "type": "boolean"
+              },
+              "input": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["text", "image"]
+                }
+              },
+              "cost": {
+                "type": "object",
+                "properties": {
+                  "input": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "output": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cacheRead": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "cacheWrite": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "tiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "output": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheRead": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "cacheWrite": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "inputTokensAbove": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": ["input", "output", "cacheRead", "cacheWrite", "inputTokensAbove"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
+              "contextWindow": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "maxTokens": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "thinkingLevelMap": {
+                "type": "object",
+                "properties": {
+                  "off": {
+                    "type": ["string", "null"]
+                  },
+                  "minimal": {
+                    "type": ["string", "null"]
+                  },
+                  "low": {
+                    "type": ["string", "null"]
+                  },
+                  "medium": {
+                    "type": ["string", "null"]
+                  },
+                  "high": {
+                    "type": ["string", "null"]
+                  },
+                  "xhigh": {
+                    "type": ["string", "null"]
+                  },
+                  "max": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "compat": {}
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "kind", "value"],
+        "additionalProperties": false
+      }
+    },
+    "builtinRules": {
+      "type": "boolean"
+    },
+    "sources": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["pi.dev", "models.dev"]
+      }
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 120000
+        },
+        "maxBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "ttlMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "dir": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "applyOnIdleOnly": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

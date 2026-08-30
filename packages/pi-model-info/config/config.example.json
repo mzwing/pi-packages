@@ -1,0 +1,21 @@
+{
+  "$schema": "../schemas/config.schema.json",
+  "providers": {
+    "my-relay": {
+      "catalogProvider": "openrouter",
+      "costMultiplier": 1.2,
+      "models": {
+        "gpt-special": { "alias": "openai/gpt-5.6-sol" },
+        "house-model": { "skip": true }
+      }
+    }
+  },
+  "rules": [
+    {
+      "id": "mainfei",
+      "kind": "suffix",
+      "value": "-mainfei",
+      "override": { "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 } }
+    }
+  ]
+}

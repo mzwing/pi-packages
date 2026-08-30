@@ -1,0 +1,81 @@
+{
+  "name": "@mzwing/pi-model-info",
+  "version": "0.0.0",
+  "description": "Completes third-party model metadata in Pi from the pi.dev and models.dev catalogs",
+  "keywords": [
+    "context-window",
+    "model-metadata",
+    "models.dev",
+    "pi",
+    "pi-coding-agent",
+    "pi-extension",
+    "pi-package",
+    "pricing"
+  ],
+  "homepage": "https://github.com/mzwing/pi-packages/tree/main/packages/pi-model-info#readme",
+  "bugs": {
+    "url": "https://github.com/mzwing/pi-packages/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "mzwing",
+    "email": "mzwing@mzwing.eu.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mzwing/pi-packages.git",
+    "directory": "packages/pi-model-info"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "config/config.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "zod": "4.5.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "catalog:pi-peer",
+    "@earendil-works/pi-coding-agent": "catalog:pi-peer"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  }
+}

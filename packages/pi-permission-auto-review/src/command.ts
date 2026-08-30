@@ -1,7 +1,7 @@
 import type { AutoReviewConfigStore, AutoReviewConfigScope } from './config-store.js'
 import type { AutoReviewConfig, AutoReviewConfigFile, LoadConfigResult } from './config.js'
-import type { ExtensionAPI, ExtensionCommandContext, ModelRegistry } from '@earendil-works/pi-coding-agent'
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS, autoReviewConfigSchema } from './config.js'
+import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
+import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS } from './config.js'
 
 const COMMAND_NAME = 'permission-auto-review'
 const USAGE = 'Usage: /permission-auto-review [show|path|reset [global|project]|help]'
@@ -10,26 +10,18 @@ const CUSTOM = 'Enter custom value...'
 const SAVE = 'Save changes'
 const CANCEL = 'Cancel'
 const WHITESPACE = /\s+/
-const DEFAULT_CONFIG = autoReviewConfigSchema.parse({})
 
-const configFields = [
-  'provider',
-  'model',
-  'reasoning',
-  'timeoutMs',
-  'includeBaselinePolicy',
-  'additionalPolicy',
-] as const
+/** Every editable config key, so a new one cannot be added without a menu entry. */
+type ConfigField = Exclude<keyof AutoReviewConfig, '$schema'>
 
-type ConfigField = (typeof configFields)[number]
-
-const fieldLabels: Record<ConfigField, string> = {
-  provider: 'Provider',
-  model: 'Model',
-  reasoning: 'Reasoning',
-  timeoutMs: 'Timeout',
-  includeBaselinePolicy: 'Baseline policy',
-  additionalPolicy: 'Additional policy',
+interface FieldSpec {
+  label: string
+  format?: (value: unknown) => string
+  edit: (
+    ctx: ExtensionCommandContext,
+    draft: AutoReviewConfigFile,
+    effective: AutoReviewConfig,
+  ) => Promise<AutoReviewConfigFile>
 }
 
 export type AutoReviewActivationResult = { kind: 'active' } | { kind: 'pending' } | { kind: 'failed'; message: string }
@@ -45,27 +37,6 @@ interface ConfigLayers {
   project: AutoReviewConfigFile
 }
 
-/**
- * Effective values for display. The draft being edited may still violate the
- * cross-field policy invariant, so this resolves layer precedence directly
- * rather than through the schema, which rejects the whole object.
- */
-function mergeLayers(layers: ConfigLayers): AutoReviewConfig {
-  const additionalPolicy =
-    layers.project.additionalPolicy ?? layers.global.additionalPolicy ?? DEFAULT_CONFIG.additionalPolicy
-  return {
-    provider: layers.project.provider ?? layers.global.provider ?? DEFAULT_CONFIG.provider,
-    model: layers.project.model ?? layers.global.model ?? DEFAULT_CONFIG.model,
-    reasoning: layers.project.reasoning ?? layers.global.reasoning ?? DEFAULT_CONFIG.reasoning,
-    timeoutMs: layers.project.timeoutMs ?? layers.global.timeoutMs ?? DEFAULT_CONFIG.timeoutMs,
-    includeBaselinePolicy:
-      layers.project.includeBaselinePolicy ??
-      layers.global.includeBaselinePolicy ??
-      DEFAULT_CONFIG.includeBaselinePolicy,
-    ...(additionalPolicy === undefined ? {} : { additionalPolicy }),
-  }
-}
-
 function resolveOrigin(layers: ConfigLayers, field: ConfigField): AutoReviewConfigScope | 'default' {
   if (Object.hasOwn(layers.project, field)) {
     return 'project'
@@ -74,16 +45,6 @@ function resolveOrigin(layers: ConfigLayers, field: ConfigField): AutoReviewConf
     return 'global'
   }
   return 'default'
-}
-
-function formatFieldValue(field: ConfigField, value: unknown): string {
-  if (field === 'additionalPolicy') {
-    return typeof value === 'string' && value.length > 0 ? 'configured' : 'not set'
-  }
-  if (field === 'timeoutMs' && typeof value === 'number') {
-    return `${value} ms`
-  }
-  return String(value ?? 'not set')
 }
 
 function removeField(config: AutoReviewConfigFile, field: ConfigField): AutoReviewConfigFile {
@@ -128,8 +89,8 @@ async function editStringField(
   draft: AutoReviewConfigFile,
   field: 'provider' | 'model',
   effective: AutoReviewConfig,
-  registry: ModelRegistry,
 ): Promise<AutoReviewConfigFile> {
+  const registry = ctx.modelRegistry
   const knownValues =
     field === 'provider'
       ? registry.getAll().map(model => model.provider)
@@ -143,7 +104,8 @@ async function editStringField(
     knownValues.push(DEFAULT_MODEL)
   }
 
-  const selected = await chooseStringValue(ctx, `Configure ${fieldLabels[field]}`, knownValues, effective[field])
+  const title = field === 'provider' ? 'Configure Provider' : 'Configure Model'
+  const selected = await chooseStringValue(ctx, title, knownValues, effective[field])
   if (selected === undefined) {
     return draft
   }
@@ -221,11 +183,63 @@ async function editAdditionalPolicy(
   return additionalPolicy.length === 0 ? removeField(draft, 'additionalPolicy') : { ...draft, additionalPolicy }
 }
 
+const fields: Record<ConfigField, FieldSpec> = {
+  provider: {
+    label: 'Provider',
+    edit: async (ctx, draft, effective) => editStringField(ctx, draft, 'provider', effective),
+  },
+  model: {
+    label: 'Model',
+    edit: async (ctx, draft, effective) => editStringField(ctx, draft, 'model', effective),
+  },
+  reasoning: {
+    label: 'Reasoning',
+    edit: async (ctx, draft) => editReasoning(ctx, draft),
+  },
+  timeoutMs: {
+    label: 'Timeout',
+    format: value => (typeof value === 'number' ? `${value} ms` : String(value ?? 'not set')),
+    edit: async (ctx, draft, effective) => editTimeout(ctx, draft, effective.timeoutMs),
+  },
+  includeBaselinePolicy: {
+    label: 'Baseline policy',
+    edit: async (ctx, draft) => editBaselinePolicy(ctx, draft),
+  },
+  additionalPolicy: {
+    label: 'Additional policy',
+    format: value => (typeof value === 'string' && value.length > 0 ? 'configured' : 'not set'),
+    edit: async (ctx, draft, effective) => editAdditionalPolicy(ctx, draft, effective.additionalPolicy),
+  },
+}
+
+const configFields = Object.keys(fields) as ConfigField[]
+
+/**
+ * Effective values for display. The draft being edited may still violate the cross-field policy
+ * invariant, so this resolves layer precedence directly rather than through the schema, which
+ * rejects the whole object.
+ */
+function mergeLayers(layers: ConfigLayers): AutoReviewConfig {
+  const merged = { ...DEFAULT_CONFIG }
+  for (const field of configFields) {
+    const value = layers.project[field] ?? layers.global[field]
+    if (value !== undefined) {
+      Object.assign(merged, { [field]: value })
+    }
+  }
+
+  return merged
+}
+
+function formatFieldValue(field: ConfigField, value: unknown): string {
+  return fields[field].format?.(value) ?? String(value ?? 'not set')
+}
+
 function formatMenuOptions(effective: AutoReviewConfig, layers: ConfigLayers, scope: AutoReviewConfigScope): string[] {
   return configFields.map(field => {
     const origin = resolveOrigin(layers, field)
     const scopeState = Object.hasOwn(layers[scope], field) ? 'override' : 'inherit'
-    return `${fieldLabels[field]}: ${formatFieldValue(field, effective[field])} (source: ${origin}; ${scope}: ${scopeState})`
+    return `${fields[field].label}: ${formatFieldValue(field, effective[field])} (source: ${origin}; ${scope}: ${scopeState})`
   })
 }
 
@@ -300,28 +314,9 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
       return
     }
 
-    const fieldIndex = fieldOptions.indexOf(selectedOption)
-    const field = configFields[fieldIndex]
-    if (field === undefined) {
-      continue
-    }
-    switch (field) {
-      case 'provider':
-      case 'model':
-        draft = await editStringField(ctx, draft, field, effective, ctx.modelRegistry)
-        break
-      case 'reasoning':
-        draft = await editReasoning(ctx, draft)
-        break
-      case 'timeoutMs':
-        draft = await editTimeout(ctx, draft, effective.timeoutMs)
-        break
-      case 'includeBaselinePolicy':
-        draft = await editBaselinePolicy(ctx, draft)
-        break
-      case 'additionalPolicy':
-        draft = await editAdditionalPolicy(ctx, draft, effective.additionalPolicy)
-        break
+    const field = configFields[fieldOptions.indexOf(selectedOption)]
+    if (field !== undefined) {
+      draft = await fields[field].edit(ctx, draft, effective)
     }
   }
 }

@@ -1,9 +1,10 @@
+import type { AutoReviewConfig } from '../src/config.js'
 import { describe, expect, it } from 'vitest'
-import { autoReviewConfigSchema } from '../src/config.js'
+import { DEFAULT_CONFIG } from '../src/config.js'
 import { POLICY_REVISION, buildSystemPrompt } from '../src/policy.js'
 
-function config(overrides: Record<string, unknown> = {}) {
-  return autoReviewConfigSchema.parse(overrides)
+function config(overrides: Partial<AutoReviewConfig> = {}): AutoReviewConfig {
+  return { ...DEFAULT_CONFIG, ...overrides }
 }
 
 describe('guardian policy', () => {

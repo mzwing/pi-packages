@@ -30,16 +30,7 @@ export type AutoReviewScopeSnapshot =
       issue: ConfigIssue
     })
 
-export type ConfigMutationResult =
-  | {
-      ok: true
-      loadResult: LoadConfigResult
-      snapshot: AutoReviewScopeSnapshot
-    }
-  | {
-      ok: false
-      message: string
-    }
+export type ConfigMutationResult = { ok: true; loadResult: LoadConfigResult } | { ok: false; message: string }
 
 export interface AutoReviewConfigFileSystem {
   readFile: (path: string) => string | undefined
@@ -75,7 +66,7 @@ function formatIssues(issues: ConfigIssue[]): string {
 }
 
 export class AutoReviewConfigStore {
-  readonly agentDir: string
+  private readonly agentDir: string
   private readonly fileSystem: AutoReviewConfigFileSystem
 
   constructor(options: AutoReviewConfigStoreOptions = {}) {
@@ -163,18 +154,7 @@ export class AutoReviewConfigStore {
       }
     }
 
-    return {
-      ok: true,
-      loadResult,
-      snapshot: {
-        scope: snapshot.scope,
-        cwd: snapshot.cwd,
-        path: snapshot.path,
-        source,
-        valid: true,
-        config: parsed.config,
-      },
-    }
+    return { ok: true, loadResult }
   }
 
   reset(snapshot: AutoReviewScopeSnapshot): ConfigMutationResult {
@@ -201,19 +181,7 @@ export class AutoReviewConfigStore {
       }
     }
 
-    const loadResult = this.loadWithOverride(snapshot, undefined)
-    return {
-      ok: true,
-      loadResult,
-      snapshot: {
-        scope: snapshot.scope,
-        cwd: snapshot.cwd,
-        path: snapshot.path,
-        source: undefined,
-        valid: true,
-        config: {},
-      },
-    }
+    return { ok: true, loadResult: this.loadWithOverride(snapshot, undefined) }
   }
 
   private loadWithOverride(snapshot: AutoReviewScopeSnapshot, source: string | undefined): LoadConfigResult {

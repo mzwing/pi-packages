@@ -10,7 +10,7 @@ A [Pi](https://github.com/earendil-works/pi) extension that adds Codex-style aut
 
 Ours is mostly specialized for OpenAI's `codex-auto-review` model, which is trained to evaluate permission requests in the context of a coding assistant. Our extension aims at providing Codex-style automatic permission reviews for Pi's coding agent.
 
-The bundled baseline is a Pi-specific adaptation of OpenAI Codex Guardian's [`policy_template.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy_template.md) and [`policy.md`](https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/guardian/policy.md) at revision [`c4f42d161ae44a8d696ee9fb595709661979d187`](https://github.com/openai/codex/commit/c4f42d161ae44a8d696ee9fb595709661979d187). It is bundled at build time; the extension never fetches policy text while reviewing an action.
+The bundled baseline is a Pi-specific adaptation of OpenAI Codex Guardian's [`policy_template.md`](https://github.com/openai/codex/blob/6478a751fde8884b2fdc76486fe23175a8e795d4/codex-rs/core/assets/guardian/policy_template.md) and [`policy.md`](https://github.com/openai/codex/blob/6478a751fde8884b2fdc76486fe23175a8e795d4/codex-rs/core/assets/guardian/policy.md) at revision [`6478a751fde8884b2fdc76486fe23175a8e795d4`](https://github.com/openai/codex/commit/6478a751fde8884b2fdc76486fe23175a8e795d4). It is bundled at build time; the extension never fetches policy text while reviewing an action.
 
 Upstream's `Execution Environment` section and its MCP `connected_account_email` rule are deliberately left out: both describe Codex's sandbox and tool surface, which Pi's tool-free reviewer does not have. Upstream's `node_repl_policy.md` is likewise out of scope — it governs `node_repl` / `cua_repl` computer-use tools that Pi does not expose.
 
@@ -35,7 +35,7 @@ pi install npm:@gotgenes/pi-permission-system # dependency
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
-Pi 0.84.2+ (0.84.x and 0.85.x) and `@gotgenes/pi-permission-system` 27.x are required.
+Pi 0.84.2+ (0.84.x and 0.85.x) and `@gotgenes/pi-permission-system` 27.x, 28.x, or 29.x are required.
 
 The authorizer registers itself against the service keyed by its own session id, so a subagent's reviewer lands in the node whose gates actually read it.
 

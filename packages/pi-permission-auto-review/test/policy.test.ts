@@ -11,7 +11,7 @@ describe('guardian policy', () => {
   it('records the pinned upstream revision and trusted Pi provenance boundary', () => {
     const prompt = buildSystemPrompt(config())
 
-    expect(POLICY_REVISION).toBe('openai-codex/c4f42d161ae44a8d696ee9fb595709661979d187+pi1')
+    expect(POLICY_REVISION).toBe('openai-codex/6478a751fde8884b2fdc76486fe23175a8e795d4+pi1')
     expect(prompt).toContain('source field is "user" or "user_interaction"')
     expect(prompt).toContain('ask_user_question or plan_mode_question')
     expect(prompt).toContain('branch summary, compaction summary')

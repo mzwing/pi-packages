@@ -93,11 +93,25 @@ if (pinned === undefined) {
   throw new Error(`pinned revision ${UPSTREAM_REVISION} not found in ${UPSTREAM_REPO}`)
 }
 
+const heads = await Promise.all(UPSTREAM_FILES.map(async file => ({ file, commits: await history(file, values.ref) })))
+
+// GitHub's commits API does not follow renames, so a tracked file with no
+// history is unreachable rather than unchanged: the manifest path went stale
+// when upstream reorganized, or `--ref` predates the move. Refuse both here —
+// otherwise one empty file is silently reported as "unchanged" below, and all
+// of them empty crashes the initial-value-free reduce.
+const unresolved = heads.filter(head => head.commits.length === 0)
+if (unresolved.length > 0) {
+  throw new Error(
+    `no commits at ${values.ref} for ${unresolved.map(head => filePath(head.file)).join(', ')}` +
+      ` — check UPSTREAM_DIRECTORY in src/upstream.ts, or pass a --ref that postdates the move`,
+  )
+}
+
 // Each tracked file moves independently, so the revision to pin is the newest
 // commit across all of them — the same thing POLICY_REVISION claims.
-const heads = await Promise.all(UPSTREAM_FILES.map(async file => history(file, values.ref)))
 const newest = heads
-  .flatMap(commits => commits.slice(0, 1))
+  .flatMap(head => head.commits.slice(0, 1))
   .reduce((left, right) => (right.committedAt > left.committedAt ? right : left))
 
 console.log(`upstream   ${UPSTREAM_REPO}/${UPSTREAM_DIRECTORY} @ ${values.ref}`)

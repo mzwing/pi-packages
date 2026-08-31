@@ -18,9 +18,11 @@ describe('hand-written models.json fields', () => {
     expect(authored.get('relay')?.get('gpt-5.5')).toEqual(new Set(['contextWindow']))
   })
 
-  it('ignores a model with no tracked fields', () => {
+  // A definition with no tracked fields still says models.json defines this provider's list, which
+  // is what rules out completing it through a lazy wrapper.
+  it('records a model with no tracked fields as authoring nothing', () => {
     const authored = read({ providers: { relay: { models: [{ id: 'gpt-5.5' }] } } })
-    expect(authored.has('relay')).toBe(false)
+    expect(authored.get('relay')?.get('gpt-5.5')).toEqual(new Set())
   })
 
   it('ignores an empty or missing models array', () => {

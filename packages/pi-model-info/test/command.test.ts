@@ -50,6 +50,11 @@ describe('summary', () => {
     expect(text).toContain('models.dev: 0 entries, never fetched — ETIMEDOUT')
   })
 
+  it('says how current each list stays', () => {
+    const live = { ...report(RESOLVED), strategy: 'native' as const }
+    expect(formatSummary([live], catalog, [], NOW)).toContain('(1 models) · list re-read live')
+  })
+
   it('explains an empty opt-in list', () => {
     expect(formatSummary([], catalog, [], NOW)).toContain('No providers opted in')
   })

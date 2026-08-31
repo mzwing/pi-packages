@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** provider id → model id → field names the user hand-wrote. */
+/**
+ * provider id → model id → field names the user hand-wrote, empty for a definition that carries
+ * none. Every definition is recorded, so a present provider also answers "models.json defines this
+ * provider's models" — which is what decides whether a lazy wrapper would survive recomposition.
+ */
 export type UserAuthoredMap = Map<string, Map<string, Set<string>>>
 
 /** Only fields this extension would otherwise overwrite are worth tracking. */
@@ -58,10 +62,7 @@ export function readUserAuthoredFields(
       if (!isRecord(definition) || typeof definition['id'] !== 'string') {
         continue
       }
-      const fields = new Set(Object.keys(definition).filter(key => TRACKED_FIELDS.has(key)))
-      if (fields.size > 0) {
-        models.set(definition['id'], fields)
-      }
+      models.set(definition['id'], new Set(Object.keys(definition).filter(key => TRACKED_FIELDS.has(key))))
     }
     if (models.size > 0) {
       authored.set(providerId, models)

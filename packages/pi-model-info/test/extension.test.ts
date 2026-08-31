@@ -1,6 +1,7 @@
 import type { CatalogCacheFileSystem } from '../src/cache.js'
 import type { LoadConfigResult } from '../src/config.js'
 import type { CatalogFetcher, FetchOutcome } from '../src/fetcher.js'
+import type { UserAuthoredMap } from '../src/models-json.js'
 import type { ModelInfoConfig, SnapshotModel } from '../src/types.js'
 import type { ExtensionAPI, ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it, vi } from 'vitest'
@@ -22,12 +23,28 @@ const PI_DEV_PAYLOAD = {
       contextWindow: 400_000,
       maxTokens: 128_000,
     },
+    'gpt-5.5-mini': {
+      id: 'gpt-5.5-mini',
+      name: 'GPT-5.5 mini',
+      api: 'openai-completions',
+      reasoning: true,
+      input: ['text'],
+      cost: { input: 1, output: 4, cacheRead: 0.1, cacheWrite: 1.25 },
+      contextWindow: 200_000,
+      maxTokens: 64_000,
+    },
   },
+}
+
+interface NativeProvider {
+  id: string
+  getModels: () => SnapshotModel[]
 }
 
 interface Harness {
   pi: ExtensionAPI
   registrations: { id: string; config: Record<string, unknown> }[]
+  natives: NativeProvider[]
   unregistered: string[]
   commands: Map<
     string,
@@ -39,6 +56,7 @@ interface Harness {
 function createPiHarness(): Harness {
   const handlers = new Map<string, ((event: unknown, context: unknown) => void)[]>()
   const registrations: Harness['registrations'] = []
+  const natives: NativeProvider[] = []
   const unregistered: string[] = []
   const commands: Harness['commands'] = new Map()
 
@@ -48,8 +66,12 @@ function createPiHarness(): Harness {
       bucket.push(handler)
       handlers.set(event, bucket)
     },
-    registerProvider(id: string, config: Record<string, unknown>) {
-      registrations.push({ id, config })
+    registerProvider(idOrProvider: string | NativeProvider, config: Record<string, unknown>) {
+      if (typeof idOrProvider === 'string') {
+        registrations.push({ id: idOrProvider, config })
+      } else {
+        natives.push(idOrProvider)
+      }
     },
     unregisterProvider(id: string) {
       unregistered.push(id)
@@ -63,6 +85,7 @@ function createPiHarness(): Harness {
   return {
     pi: pi as unknown as ExtensionAPI,
     registrations,
+    natives,
     unregistered,
     commands,
     emit(event, context) {
@@ -81,24 +104,28 @@ interface RegistryOptions {
   missing?: boolean
 }
 
-function createRegistry(options: RegistryOptions = {}): ModelRegistry & { models: SnapshotModel[] } {
+interface RegistryState {
+  models: SnapshotModel[]
+  /** What `getRegisteredNativeProvider` reports; a test sets it to replay a `/reload`. */
+  native: unknown
+}
+
+function createRegistry(options: RegistryOptions = {}): ModelRegistry & RegistryState {
+  // One stable object, as Pi has: a wrapper must be able to read the list underneath it later.
   const state = {
     models: options.models ?? [makeSnapshot()],
-    getProvider(id: string) {
-      if (options.missing === true) {
-        return undefined
-      }
-      return {
-        id,
-        getModels: () => state.models,
-        ...(options.dynamic === true ? { refreshModels: async () => {} } : {}),
-      }
+    native: options.nativeProvider,
+    provider: {
+      id: 'relay',
+      getModels: () => state.models,
+      ...(options.dynamic === true ? { refreshModels: async () => {} } : {}),
     },
+    getProvider: (_id: string) => (options.missing === true ? undefined : state.provider),
     getRegisteredProviderConfig: () => options.registeredConfig,
-    getRegisteredNativeProvider: () => options.nativeProvider,
+    getRegisteredNativeProvider: () => state.native,
     find: (_provider: string, modelId: string) => state.models.find(model => model.id === modelId),
   }
-  return state as unknown as ModelRegistry & { models: SnapshotModel[] }
+  return state as unknown as ModelRegistry & RegistryState
 }
 
 function memoryFs(): CatalogCacheFileSystem {
@@ -136,6 +163,8 @@ interface SetupOptions {
   registry?: ModelRegistry
   fetcher?: CatalogFetcher
   isIdle?: boolean
+  /** What models.json defines, which decides whether a provider can be completed lazily. */
+  authored?: UserAuthoredMap
 }
 
 function setup(options: SetupOptions = {}) {
@@ -151,7 +180,7 @@ function setup(options: SetupOptions = {}) {
     globalPath: '/agent/config.json',
     projectPath: '/project/config.json',
   }))
-  const readUserAuthored = vi.fn(() => new Map())
+  const readUserAuthored = vi.fn((): UserAuthoredMap => options.authored ?? new Map())
 
   createModelInfoExtension(harness.pi, {
     catalogStore: new CatalogStore({
@@ -258,13 +287,140 @@ describe('session start', () => {
     expect(harness.registrations).toHaveLength(0)
     expect(harness.warnings.join('\n')).toContain('no models to complete')
   })
+})
 
-  it('warns about a dynamically refreshing provider but still completes it', async () => {
-    const harness = setup({ registry: createRegistry({ dynamic: true }) })
+describe('a provider that refreshes its own list', () => {
+  function dynamic(models: SnapshotModel[] = [makeSnapshot({ id: 'gpt-5.5' })]) {
+    return createRegistry({ dynamic: true, models })
+  }
+
+  it('registers a provider object instead of a replacement list', async () => {
+    const harness = setup({ registry: dynamic() })
     harness.start()
     await harness.flush()
+
+    expect(harness.registrations).toHaveLength(0)
+    expect(harness.natives).toHaveLength(1)
+    expect(harness.natives[0]?.getModels()[0]?.contextWindow).toBe(400_000)
+    expect(harness.warnings.join('\n')).not.toContain('freezes')
+  })
+
+  // The whole point: no event, no re-registration, no next turn — the list is read late.
+  it('completes a model that appears after registration, on the next read', async () => {
+    const registry = dynamic()
+    const harness = setup({ registry })
+    harness.start()
+    await harness.flush()
+
+    registry.models = [...registry.models, makeSnapshot({ id: 'gpt-5.5-mini', contextWindow: 128_000 })]
+
+    const models = harness.natives[0]?.getModels() ?? []
+    expect(models.map(model => model.id)).toEqual(['gpt-5.5', 'gpt-5.5-mini'])
+    expect(models[1]?.contextWindow).toBe(200_000)
+    expect(harness.natives).toHaveLength(1)
+  })
+
+  it('leaves the list untouched until a catalog is loaded', async () => {
+    const failing: CatalogFetcher = {
+      get: async (): Promise<FetchOutcome> => ({ status: 'error', message: 'offline' }),
+    }
+    const harness = setup({ registry: dynamic(), fetcher: failing })
+    harness.start()
+    await harness.flush()
+
+    expect(harness.natives).toHaveLength(0)
+  })
+
+  it('reuses its wrapper rather than stacking one across a reload', async () => {
+    const registry = dynamic()
+    const harness = setup({ registry })
+    harness.start()
+    await harness.flush()
+
+    // Pi keeps the native registration across a reload; a second pass must unwrap to the base.
+    registry.native = harness.natives[0]
+    harness.start()
+    await harness.flush()
+
+    expect(harness.natives).toHaveLength(2)
+    expect(harness.natives[1]).toBe(harness.natives[0])
+    expect(harness.natives[1]?.getModels()[0]?.contextWindow).toBe(400_000)
+  })
+
+  it('falls back to a replacement list when models.json defines the provider', async () => {
+    const harness = setup({
+      registry: dynamic(),
+      authored: new Map([['relay', new Map([['gpt-5.5', new Set<string>()]])]]),
+    })
+    harness.start()
+    await harness.flush()
+
+    expect(harness.natives).toHaveLength(0)
     expect(harness.registrations).toHaveLength(1)
     expect(harness.warnings.join('\n')).toContain('freezes')
+  })
+})
+
+describe('a sibling that refreshes its own list', () => {
+  const definition = {
+    id: 'gpt-5.5-mini',
+    name: 'gpt-5.5-mini',
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 16_384,
+  }
+
+  function siblingConfig(): Record<string, unknown> {
+    return {
+      api: 'openai-completions',
+      apiKey: '!cat /run/secret',
+      baseUrl: 'http://localhost:8317/v1',
+      models: [{ id: 'gpt-5.5' }],
+      refreshModels: async () => [{ ...definition }],
+    }
+  }
+
+  type Refresh = (context: unknown) => Promise<SnapshotModel[]>
+
+  it('sends its own refreshModels, and completes what the sibling returns', async () => {
+    const registered = siblingConfig()
+    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
+    harness.start()
+    await harness.flush()
+
+    const config = harness.registrations[0]?.config ?? {}
+    expect(Object.keys(config)).toEqual(['models', 'refreshModels'])
+
+    const refreshed = await (config['refreshModels'] as Refresh)({})
+    expect(refreshed[0]?.contextWindow).toBe(200_000)
+    // The provider-level api and baseUrl fill in what the definition left out.
+    expect(refreshed[0]?.baseUrl).toBe('http://localhost:8317/v1')
+  })
+
+  it('does not stack a decorator on a decorator across a reload', async () => {
+    let calls = 0
+    const registered = {
+      ...siblingConfig(),
+      refreshModels: async () => {
+        calls += 1
+
+        return [{ ...definition }]
+      },
+    }
+    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
+    harness.start()
+    await harness.flush()
+
+    // Pi merges our keys into the sibling's entry, so the next session reads back our own hook.
+    Object.assign(registered, harness.registrations[0]?.config)
+    harness.start()
+    await harness.flush()
+
+    const refreshed = await (harness.registrations[1]?.config['refreshModels'] as Refresh)({})
+    expect(calls).toBe(1)
+    expect(refreshed[0]?.contextWindow).toBe(200_000)
   })
 })
 

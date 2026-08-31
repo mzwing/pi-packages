@@ -47,18 +47,20 @@ export function createModelInfoExtension(pi: ExtensionAPI, dependencies: ModelIn
   let isIdle: () => boolean = () => true
 
   function applyCatalog(snapshot: CatalogSnapshot): void {
-    catalog = snapshot
     if (config === undefined) {
       return
     }
     // A contextWindow that changes mid-turn can flip a compaction decision, so by default the swap
-    // waits for the turn to finish.
+    // waits for the turn to finish. A lazily completed provider reads whatever catalog is in force
+    // at the moment Pi asks it for models, so holding the swap back here is what keeps that promise
+    // for it too.
     if (config.applyOnIdleOnly && !isIdle()) {
       pending = snapshot
 
       return
     }
     pending = undefined
+    catalog = snapshot
     applier.apply(pi, config, snapshot, userAuthored)
   }
 
@@ -114,8 +116,9 @@ export function createModelInfoExtension(pi: ExtensionAPI, dependencies: ModelIn
       return
     }
 
-    applier.capture(context.modelRegistry, config)
+    // Read before capturing: which models models.json defines is part of choosing a strategy.
     userAuthored = readUserAuthored(agentDir)
+    applier.capture(context.modelRegistry, config, userAuthored)
     start()
   })
 
@@ -131,6 +134,7 @@ export function createModelInfoExtension(pi: ExtensionAPI, dependencies: ModelIn
 
   pi.on('turn_end', () => {
     if (pending !== undefined && config !== undefined) {
+      catalog = pending
       applier.apply(pi, config, pending, userAuthored)
     }
     pending = undefined

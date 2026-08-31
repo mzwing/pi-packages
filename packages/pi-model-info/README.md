@@ -23,8 +23,9 @@ This extension looks each model up in two catalogs and fills the gaps at runtime
 ## What it does not do
 
 It never creates providers, never discovers models, never changes `id` / `provider` / `baseUrl` /
-`api` / auth / transport, and never writes to any of your files. Remove it and Pi goes back to
-exactly what it did before.
+`api` / auth / transport, and never writes to any of your files. Where it wraps a provider it
+delegates that provider's own auth, transport and refresh behaviour untouched. Remove it and Pi
+goes back to exactly what it did before.
 
 ## Install
 
@@ -39,6 +40,26 @@ Then opt a provider in — nothing happens until you do:
 { "providers": { "my-relay": {} } }
 ```
 
+## Staying current
+
+Model lists move. Pi refreshes every built-in provider's catalog from pi.dev on a four-hour clock
+and again the moment you open `/model`, and a discovery extension may refetch its own list. A
+completion that was snapshotted once does not survive any of that, so it is applied in whichever of
+three ways claims the least:
+
+| What Pi already holds for the provider                 | How it is completed                                             | How current the list stays                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Nothing else registered, and it refreshes its own list | the provider object is wrapped; `getModels()` completes on read | live — a model that appears mid-session is completed on first read    |
+| A sibling extension registered `refreshModels`         | that hook is wrapped, so each refresh returns a completed list  | live — `/model` renders the completion in the refresh that fetched it |
+| Anything else                                          | the list is snapshotted and re-registered                       | fixed for the session, re-checked on each agent turn                  |
+
+`/model-info` names which one is in force, per provider.
+
+Only the third row can freeze a dynamic list, and it is the only one that warns. It is reached when
+something else owns the provider's registration slot — Pi merges every extension registration for a
+provider into one entry, and taking that entry over would take the sibling's `apiKey` with it — or
+when models.json defines the provider's `models[]`, which Pi rebuilds above anything underneath.
+
 ## Pairing with a discovery extension
 
 If your provider's models come from something like
@@ -49,9 +70,10 @@ completes _what they are_.**
 
 Ordering is guaranteed, not lucky. Discovery extensions register from inside their factory, which
 Pi flushes before any session event; this extension registers from `session_start`, strictly
-after. It only ever sends the `models` key, so Pi's merge preserves the sibling's `baseUrl`,
-`api`, and `apiKey` — and it never calls `unregisterProvider` on a registration carrying keys it
-did not write, because that call would take those credentials with it.
+after. It only ever sends `models` — plus, for a sibling that refreshes, a wrapper around that
+sibling's own `refreshModels` — so Pi's merge preserves its `baseUrl`, `api`, and `apiKey`, and it
+never calls `unregisterProvider` on a registration carrying keys it did not write, because that
+call would take those credentials with it.
 
 Where the sibling already supplied a real value and the catalogs cannot resolve the model, its
 value is kept byte-for-byte. Where you prefer its numbers even when a catalog does resolve, set
@@ -101,17 +123,17 @@ Global at `~/.pi/agent/extensions/pi-model-info/config.json`, per-project at
 
 ### Per provider
 
-| Key                   | Default   | Meaning                                                                            |
-| --------------------- | --------- | ---------------------------------------------------------------------------------- |
-| `catalogProvider`     | —         | Scope lookups to one catalog provider, e.g. `openrouter`.                          |
-| `costMultiplier`      | `1`       | Relay markup, applied to catalog pricing only — never to a rule's explicit `0`.    |
-| `costPolicy`          | `catalog` | `zero` to force free, `keep` to leave pricing alone.                               |
-| `contextWindowPolicy` | `catalog` | `min` never raises the limit past what Pi already had; `keep` leaves limits alone. |
-| `capabilityPolicy`    | `catalog` | `widen` only ever adds a capability; `keep` leaves them alone.                     |
-| `useCatalogName`      | `false`   | Rename models to their catalog names.                                              |
-| `mapThinkingLevels`   | `false`   | Derive a thinking-level map from models.dev. pi.dev's real map is always used.     |
-| `allowDynamic`        | `false`   | Suppress the warning for a provider that refreshes its own model list.             |
-| `models`              | —         | Per-model gates: `alias`, `override`, `skip`, `prefixes`, `suffixes`.              |
+| Key                   | Default   | Meaning                                                                               |
+| --------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `catalogProvider`     | —         | Scope lookups to one catalog provider, e.g. `openrouter`.                             |
+| `costMultiplier`      | `1`       | Relay markup, applied to catalog pricing only — never to a rule's explicit `0`.       |
+| `costPolicy`          | `catalog` | `zero` to force free, `keep` to leave pricing alone.                                  |
+| `contextWindowPolicy` | `catalog` | `min` never raises the limit past what Pi already had; `keep` leaves limits alone.    |
+| `capabilityPolicy`    | `catalog` | `widen` only ever adds a capability; `keep` leaves them alone.                        |
+| `useCatalogName`      | `false`   | Rename models to their catalog names.                                                 |
+| `mapThinkingLevels`   | `false`   | Derive a thinking-level map from models.dev. pi.dev's real map is always used.        |
+| `allowDynamic`        | `false`   | Suppress the warning when a refreshing provider can only be completed by replacement. |
+| `models`              | —         | Per-model gates: `alias`, `override`, `skip`, `prefixes`, `suffixes`.                 |
 
 `contextWindowPolicy: "min"` and `capabilityPolicy: "keep"` exist because inflating a limit or
 promoting a capability the relay does not actually support turns into a failed request rather
@@ -176,9 +198,10 @@ cost:       $0/$0 per Mtok   from rule 'free-dash'
 
 ## Limits
 
-- Completing a provider replaces its model list, so a provider that discovers models
-  _dynamically_ has that list frozen for the session. This extension warns when it sees one and
-  re-reads the list every session; a mid-session change is picked up on the next agent turn.
+- A provider whose registration slot is already taken, or whose `models[]` models.json spells out,
+  can only be completed by replacement, which fixes its list for the session. It warns when it sees
+  one; a mid-session change is picked up on the next agent turn. See
+  [Staying current](#staying-current).
 - If two extensions complete the same provider, the last one to register wins.
 - With no cache and no network, nothing is applied at all rather than partially.
 

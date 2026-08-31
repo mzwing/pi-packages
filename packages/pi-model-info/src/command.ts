@@ -1,6 +1,6 @@
 import type { CatalogSnapshot } from './catalog.js'
 import type { ConfigIssue } from './config.js'
-import type { ModelReport, ProviderReport } from './provider-apply.js'
+import type { ModelReport, ProviderReport, ProviderStrategy } from './provider-apply.js'
 import type { Resolution, SnapshotModel } from './types.js'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { COMMAND_NAME } from './config.js'
@@ -15,6 +15,13 @@ export interface ModelInfoCommandController {
 }
 
 const COMPLETION_LIMIT = 50
+
+/** How current each provider's list stays — the one thing you cannot tell from the counts. */
+const STRATEGY_NOTE: Record<ProviderStrategy, string> = {
+  native: 'list re-read live',
+  decorate: 'list re-read on refresh',
+  replace: 'list fixed for this session',
+}
 
 interface ModelReference {
   providerId: string | undefined
@@ -65,9 +72,10 @@ export function formatSummary(
       continue
     }
     const counts = countByKind(report.models)
+    const note = report.strategy === undefined ? '' : ` · ${STRATEGY_NOTE[report.strategy]}`
     lines.push(
       `${report.provider}: ${counts.resolved} completed, ${counts.ambiguous} ambiguous, ` +
-        `${counts.unresolved} unresolved (${report.models.length} models)`,
+        `${counts.unresolved} unresolved (${report.models.length} models)${note}`,
     )
   }
 

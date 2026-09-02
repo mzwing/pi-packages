@@ -35,7 +35,7 @@ pi install npm:@gotgenes/pi-permission-system # dependency
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
-Pi 0.84.2+ (0.84.x and 0.85.x) and `@gotgenes/pi-permission-system` 27.x, 28.x, or 29.x are required.
+Pi 0.84.2+ (0.84.x and 0.85.x) and `@gotgenes/pi-permission-system` 27.x, 28.x, 29.x, or 30.x are required.
 
 The authorizer registers itself against the service keyed by its own session id, so a subagent's reviewer lands in the node whose gates actually read it.
 

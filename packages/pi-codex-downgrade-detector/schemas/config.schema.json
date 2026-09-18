@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-codex-downgrade-detector/schemas/config.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providers": {
+      "default": ["openai-codex"],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "tiers": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      }
+    },
+    "checkEffort": {
+      "default": true,
+      "type": "boolean"
+    },
+    "notify": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

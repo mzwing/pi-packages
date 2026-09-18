@@ -1,0 +1,10 @@
+{
+  "$schema": "../schemas/config.schema.json",
+  "providers": ["openai-codex", "my-relay"],
+  "tiers": {
+    "my-relay-house-model": 10,
+    "gpt-6-astra": 100
+  },
+  "checkEffort": true,
+  "notify": true
+}

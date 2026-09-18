@@ -1,5 +1,11 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.3.3
+
+### Patch Changes
+
+- [`b5825f8`](https://github.com/mzwing/pi-packages/commit/b5825f84e94b8f2551f8a1cd1643e15c992d53c7) Thanks [@mzwing](https://github.com/mzwing)! - chore(pi-permission-auto-review): accept @gotgenes/pi-permission-system v31 and v32
+
 ## 0.3.2
 
 ### Patch Changes

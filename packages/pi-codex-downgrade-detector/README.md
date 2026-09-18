@@ -62,6 +62,12 @@ The effort comparison is client-side. It reports what Pi put on the wire against
 selected thinking level maps to for that model; nothing on the response side confirms the effort
 the server actually used.
 
+## Credits
+
+<https://t.me/c/2502727045/42320>
+
+Super thx for opening the detecting verdict out!
+
 ## License
 
 [MIT](LICENSE)

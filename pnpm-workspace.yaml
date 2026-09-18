@@ -5,12 +5,12 @@ packages:
   - packages/*
 
 catalog:
-  '@earendil-works/pi-ai': 0.84.4
-  '@earendil-works/pi-coding-agent': 0.84.4
-  '@types/node': 26.4.0
-  tsdown: 0.22.14
+  '@earendil-works/pi-ai': 0.85.1
+  '@earendil-works/pi-coding-agent': 0.85.1
+  '@types/node': 26.6.1
+  tsdown: 0.23.0
   typescript: 7.0.2
-  vitest: 4.1.11
+  vitest: 5.0.1
 
 catalogs:
   pi-peer:
@@ -23,4 +23,4 @@ allowBuilds:
   protobufjs: true
   tree-sitter-bash: true
 minimumReleaseAgeExclude:
-  - '@gotgenes/pi-permission-system@30.0.0'
+  - '@gotgenes/pi-permission-system@32.1.0'

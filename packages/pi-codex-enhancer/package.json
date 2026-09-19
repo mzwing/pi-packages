@@ -1,6 +1,6 @@
 {
   "name": "@mzwing/pi-codex-enhancer",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Keeps a valid 292-length x-codex-turn-state on every Pi Codex request",
   "keywords": [
     "codex",

@@ -1,0 +1,84 @@
+{
+  "name": "@mzwing/pi-codex-enhancer",
+  "version": "0.0.0",
+  "description": "Keeps a valid 292-length x-codex-turn-state on every Pi Codex request",
+  "keywords": [
+    "codex",
+    "degradation",
+    "downgrade",
+    "pi",
+    "pi-coding-agent",
+    "pi-extension",
+    "pi-package",
+    "turn-state"
+  ],
+  "homepage": "https://github.com/mzwing/pi-packages/tree/master/packages/pi-codex-enhancer#readme",
+  "bugs": {
+    "url": "https://github.com/mzwing/pi-packages/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "mzwing",
+    "email": "mzwing@mzwing.eu.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mzwing/pi-packages.git",
+    "directory": "packages/pi-codex-enhancer"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "config/config.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "http-proxy-agent": "9.1.0",
+    "https-proxy-agent": "9.1.0",
+    "socks-proxy-agent": "10.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "catalog:pi-peer",
+    "@earendil-works/pi-coding-agent": "catalog:pi-peer"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  }
+}

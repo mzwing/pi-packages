@@ -1,0 +1,9 @@
+{
+  "$schema": "../schemas/config.schema.json",
+  "enabled": true,
+  "providers": ["openai-codex"],
+  "probeTimeoutMs": 8000,
+  "minProbeIntervalMs": 60000,
+  "probeProxyUrl": "socks5h://user:pass@127.0.0.1:7890",
+  "notify": true
+}

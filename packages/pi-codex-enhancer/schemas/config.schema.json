@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-codex-enhancer/schemas/config.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    },
+    "providers": {
+      "default": ["openai-codex"],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "probeTimeoutMs": {
+      "default": 8000,
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 30000
+    },
+    "minProbeIntervalMs": {
+      "default": 60000,
+      "type": "integer",
+      "minimum": 10000,
+      "maximum": 3600000
+    },
+    "probeProxyUrl": {
+      "default": "",
+      "type": "string"
+    },
+    "notify": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

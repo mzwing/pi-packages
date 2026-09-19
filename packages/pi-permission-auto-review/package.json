@@ -41,6 +41,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./review": {
+      "types": "./dist/review.d.ts",
+      "import": "./dist/review.js"
     }
   },
   "publishConfig": {

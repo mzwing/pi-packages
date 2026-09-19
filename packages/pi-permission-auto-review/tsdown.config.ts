@@ -7,7 +7,7 @@ const config: UserConfig = defineConfig({
     neverBundle: ['@earendil-works/pi-ai', '@earendil-works/pi-coding-agent', '@gotgenes/pi-permission-system', 'zod'],
   },
   dts: true,
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/review.ts'],
   fixedExtension: false,
   format: 'esm',
   minify: false,

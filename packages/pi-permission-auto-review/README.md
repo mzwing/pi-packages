@@ -135,6 +135,26 @@ Each `auto_review.decision` emitted after transcript construction adds content-f
 
 These fields distinguish missing or truncated authorization evidence from a model decision made after receiving trusted evidence. Transcript text and model rationale are not persisted. The records are written through pi-permission-system's existing permission-review log when that log is enabled.
 
+## Programmatic use
+
+`@mzwing/pi-permission-auto-review/review` exposes the evidence, prompt, and verdict pipeline the live reviewer runs, for tools that test the classifier outside a Pi session.
+
+```ts
+import {
+  buildReviewPrompt,
+  DEFAULT_CONFIG,
+  parseReviewAssessment,
+  renderTranscript,
+} from '@mzwing/pi-permission-auto-review/review'
+
+const prompt = buildReviewPrompt(DEFAULT_CONFIG, renderTranscript(sessionEntries), details)
+const assessment = parseReviewAssessment(modelReply)
+```
+
+`details` is a `PromptPermissionDetails` from `@gotgenes/pi-permission-system`. The subpath needs no Pi peer dependency at runtime.
+
+`buildSystemPrompt`, `FIXED_REVIEW_PROTOCOL`, and `POLICY_REVISION` are exported alongside them. Prompt text tracks the bundled Guardian policy and changes with `POLICY_REVISION`; assert on that rather than on exact wording.
+
 ## License
 
 [MIT](LICENSE)

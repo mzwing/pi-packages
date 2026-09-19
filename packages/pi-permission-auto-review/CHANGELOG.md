@@ -1,5 +1,11 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.4.0
+
+### Minor Changes
+
+- [`dd4b6ba`](https://github.com/mzwing/pi-packages/commit/dd4b6ba6cdf90ce882b0fe73ba0f8746ebe2e37d) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-permission-auto-review): export the review pipeline from a ./review subpath
+
 ## 0.3.3
 
 ### Patch Changes

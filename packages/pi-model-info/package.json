@@ -1,6 +1,6 @@
 {
   "name": "@mzwing/pi-model-info",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Completes third-party model metadata in Pi from the pi.dev and models.dev catalogs",
   "keywords": [
     "context-window",

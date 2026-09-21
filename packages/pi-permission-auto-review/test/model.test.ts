@@ -32,7 +32,7 @@ function registry(models: Model<Api>[], provider: Provider): ReviewModelRegistry
     ),
     getAll: vi.fn(() => models),
     getProvider: vi.fn(providerId => (providerId === provider.id ? provider : undefined)),
-    getApiKeyAndHeaders: vi.fn(),
+    streamSimple: vi.fn(),
   }
 }
 
@@ -49,12 +49,10 @@ describe('resolveReviewModel', () => {
     expect(result).toMatchObject({
       ok: true,
       value: {
-        model: {
-          id: 'codex-auto-review',
-          api: 'openai-codex-responses',
-          provider: 'openai-codex',
-          input: ['text'],
-        },
+        id: 'codex-auto-review',
+        api: 'openai-codex-responses',
+        provider: 'openai-codex',
+        input: ['text'],
       },
     })
   })

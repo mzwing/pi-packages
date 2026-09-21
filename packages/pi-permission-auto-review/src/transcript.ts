@@ -281,7 +281,7 @@ export function collectTranscriptEntries(sessionEntries: SessionEntry[]): Transc
   const interactionToolCalls = new Map<string, string>()
   return sessionEntries.flatMap((entry, index) => {
     if (entry.type === 'message') {
-      return entriesFromMessage(entry.message as MessageLike, index, interactionToolCalls)
+      return entriesFromMessage(entry.message, index, interactionToolCalls)
     }
     if (entry.type === 'compaction' || entry.type === 'branch_summary') {
       return [

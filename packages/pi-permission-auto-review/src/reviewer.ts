@@ -3,7 +3,7 @@ import type { AutoReviewConfig } from './config.js'
 import type { ReviewModelRegistry } from './model.js'
 import type { TranscriptStats } from './transcript.js'
 import type { ReviewAssessment } from './verdict.js'
-import type { AssistantMessage, Provider, ProviderHeaders, SimpleStreamOptions } from '@earendil-works/pi-ai'
+import type { AssistantMessage, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import type { SessionManager } from '@earendil-works/pi-coding-agent'
 import type { Authorizer, AuthorizerLog, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { resolveReviewModel } from './model.js'
@@ -22,7 +22,6 @@ const CIRCUIT_OPEN_EVENT = 'auto_review.circuit_open'
 type FailureCategory =
   | 'provider-unresolved'
   | 'model-unresolved'
-  | 'auth-unresolved'
   | 'provider-error'
   | 'invalid-response'
   | 'timeout'
@@ -117,11 +116,6 @@ function buildStreamOptions(
   runtime: ReviewerRuntime,
   signal: AbortSignal,
   timeoutMs: number,
-  auth: {
-    apiKey?: string
-    headers?: ProviderHeaders
-    env?: Record<string, string>
-  },
   reasoning: boolean,
 ): SimpleStreamOptions {
   const options: SimpleStreamOptions = {
@@ -130,29 +124,23 @@ function buildStreamOptions(
     signal,
     timeoutMs,
   }
-  if (auth.apiKey !== undefined) {
-    options.apiKey = auth.apiKey
-  }
-  if (auth.headers !== undefined) {
-    options.headers = auth.headers
-  }
-  if (auth.env !== undefined) {
-    options.env = auth.env
-  }
   if (reasoning && runtime.config.reasoning !== 'off') {
     options.reasoning = runtime.config.reasoning
   }
   return options
 }
 
-async function callProvider(
-  provider: Provider,
-  model: Parameters<Provider['streamSimple']>[0],
+// The registry resolves the configured provider and its authentication at
+// request time, so an unusable Codex login surfaces as a provider error here
+// rather than as a separate pre-flight category.
+async function callModel(
+  registry: ReviewModelRegistry,
+  model: Parameters<ReviewModelRegistry['streamSimple']>[0],
   systemPrompt: string,
   userPrompt: string,
   options: SimpleStreamOptions,
 ): Promise<AssistantMessage> {
-  const stream = provider.streamSimple(
+  const stream = registry.streamSimple(
     model,
     {
       systemPrompt,
@@ -215,31 +203,18 @@ async function runReview(
       return failure(resolved.category)
     }
 
-    let auth
-    try {
-      auth = await raceWithSignal(runtime.registry.getApiKeyAndHeaders(resolved.value.model), signal)
-    } catch {
-      if (signal.aborted) {
-        return failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
-      }
-      return failure('auth-unresolved')
-    }
-    if (!auth.ok) {
-      return failure('auth-unresolved')
-    }
-
     const prompt = buildReviewPrompt(runtime.config, transcript, details)
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
         const remainingMs = Math.max(1, runtime.config.timeoutMs - (dependencies.now() - startedAt))
         const message = await raceWithSignal(
-          callProvider(
-            resolved.value.provider,
-            resolved.value.model,
+          callModel(
+            runtime.registry,
+            resolved.value,
             prompt.systemPrompt,
             prompt.userPrompt,
-            buildStreamOptions(runtime, signal, remainingMs, auth, resolved.value.model.reasoning),
+            buildStreamOptions(runtime, signal, remainingMs, resolved.value.reasoning),
           ),
           signal,
         )

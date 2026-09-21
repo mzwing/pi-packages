@@ -182,7 +182,6 @@ function createLog(): TestLog {
 
 interface HarnessOptions {
   responses?: Array<AssistantMessage | Error>
-  auth?: Awaited<ReturnType<ReviewModelRegistry['getApiKeyAndHeaders']>>
   timeoutMs?: number
   resultFactory?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
   providerLookup?: 'native' | 'missing' | 'throwing'
@@ -212,23 +211,11 @@ function createHarness(options: HarnessOptions = {}) {
     name: 'Custom Review',
     auth: {},
     getModels: () => [model],
-    stream: streamSimple,
-    streamSimple,
   } as unknown as Provider
-  const getApiKeyAndHeaders = vi.fn(async () =>
-    Promise.resolve(
-      options.auth ?? {
-        ok: true as const,
-        apiKey: 'secret-key',
-        headers: { 'x-review': 'enabled' },
-        env: { REVIEW_REGION: 'test' },
-      },
-    ),
-  )
   const registryBase = {
     find: vi.fn(() => model),
     getAll: vi.fn(() => [model]),
-    getApiKeyAndHeaders,
+    streamSimple,
   }
   let registry: ReviewModelRegistry
   switch (options.providerLookup ?? 'native') {
@@ -270,7 +257,6 @@ function createHarness(options: HarnessOptions = {}) {
   return {
     authorize,
     circuitBreaker,
-    getApiKeyAndHeaders,
     getBranch,
     streamSimple,
   }
@@ -283,7 +269,7 @@ describe('permission reviewer', () => {
     vi.useRealTimers()
   })
 
-  it('passes Pi-managed auth to a tool-free provider call and allows', async () => {
+  it('streams a tool-free registry call and allows', async () => {
     const harness = createHarness()
     const log = createLog()
 
@@ -291,7 +277,6 @@ describe('permission reviewer', () => {
       kind: 'allow',
     })
 
-    expect(harness.getApiKeyAndHeaders.mock.calls).toHaveLength(1)
     const [, context, options] = harness.streamSimple.mock.calls[0] ?? []
     expect(context).toMatchObject({
       messages: [{ role: 'user' }],
@@ -302,15 +287,12 @@ describe('permission reviewer', () => {
     )
     expect(harness.getBranch).toHaveBeenCalledOnce()
     expect(options).toMatchObject({
-      apiKey: 'secret-key',
-      headers: { 'x-review': 'enabled' },
-      env: { REVIEW_REGION: 'test' },
       maxRetries: 0,
       maxTokens: 1_000,
       reasoning: 'low',
     })
     expect(log.review.mock.calls[0]?.[1]).toMatchObject({
-      policyRevision: 'openai-codex/6478a751fde8884b2fdc76486fe23175a8e795d4+pi1',
+      policyRevision: 'openai-codex/a8c36ca6d265800c1b2c67d19d3583e23dee8382+pi1',
       contextSource: 'active-branch',
       transcriptEntriesRetained: 1,
       transcriptEntriesOmitted: 0,
@@ -408,7 +390,7 @@ describe('permission reviewer', () => {
     expect(harness.streamSimple.mock.calls).toHaveLength(3)
   })
 
-  it('defers malformed output and missing auth to the human authorizer', async () => {
+  it('defers malformed output and exhausted provider attempts to the human authorizer', async () => {
     const malformed = createHarness({
       responses: [assistantMessage('not json')],
     })
@@ -419,11 +401,17 @@ describe('permission reviewer', () => {
       errorCategory: 'invalid-response',
     })
 
-    const missingAuth = createHarness({
-      auth: { ok: false, error: 'not configured' },
+    // Request-time authentication now fails inside the registry stream, so an
+    // unusable login arrives here rather than as a pre-flight category.
+    const failing = createHarness({
+      responses: [new Error('not configured'), new Error('not configured'), new Error('not configured')],
     })
-    await expect(missingAuth.authorize(details(), query, createLog())).resolves.toEqual({ kind: 'defer' })
-    expect(missingAuth.streamSimple.mock.calls).toHaveLength(0)
+    const failingLog = createLog()
+    await expect(failing.authorize(details(), query, failingLog)).resolves.toEqual({ kind: 'defer' })
+    expect(failing.streamSimple.mock.calls).toHaveLength(3)
+    expect(failingLog.review.mock.calls[0]?.[1]).toMatchObject({
+      errorCategory: 'provider-error',
+    })
   })
 
   it('contains unsupported and throwing provider lookup failures', async () => {

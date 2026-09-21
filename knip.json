@@ -4,7 +4,6 @@
     "packages/pi-codex-downgrade-detector": {},
     "packages/pi-codex-enhancer": {},
     "packages/pi-model-info": {},
-    "packages/pi-permission-auto-review": {},
-    "packages/pi-polyfill": {}
+    "packages/pi-permission-auto-review": {}
   }
 }

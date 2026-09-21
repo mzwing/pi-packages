@@ -6,14 +6,15 @@
  * literal on one line so that rewrite stays unambiguous.
  */
 export const UPSTREAM_REPO = 'openai/codex'
-// Moved out of `codex-rs/core/src/guardian` by openai/codex#41477. The GitHub
-// commits API does not follow renames, so history before that commit is only
-// reachable under the old path — `--ref` older than it resolves nothing here.
-export const UPSTREAM_DIRECTORY = 'codex-rs/core/assets/guardian'
+// Moved out of `codex-rs/core/assets/guardian` by openai/codex#46026, and out of
+// `codex-rs/core/src/guardian` by #41477 before that. The GitHub commits API does
+// not follow renames, so history before the latest move is only reachable under
+// the old paths — `--ref` older than it resolves nothing here.
+export const UPSTREAM_DIRECTORY = 'codex-rs/prompts/templates/guardian'
 export const UPSTREAM_FILES = ['policy_template.md', 'policy.md'] as const
 
 /** Newest upstream commit touching {@link UPSTREAM_FILES}. */
-export const UPSTREAM_REVISION = '6478a751fde8884b2fdc76486fe23175a8e795d4'
+export const UPSTREAM_REVISION = 'a8c36ca6d265800c1b2c67d19d3583e23dee8382'
 
 /**
  * Revision of Pi's own adaptation layer, bumped whenever the adapted policy text

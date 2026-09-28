@@ -1,5 +1,11 @@
 # @mzwing/pi-codex-enhancer
 
+## 0.3.0
+
+### Minor Changes
+
+- [`c1a6e93`](https://github.com/mzwing/pi-packages/commit/c1a6e93e40395ed897d42dda278f3a70fb25c632) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-codex-enhancer, pi-codex-downgrade-detector): move the detail to a widget row and keep the footer to one glyph
+
 ## 0.2.0
 
 ### Minor Changes

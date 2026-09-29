@@ -1,5 +1,11 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.5.2
+
+### Patch Changes
+
+- [`d6db69c`](https://github.com/mzwing/pi-packages/commit/d6db69ce868cdcb9afa3a9fadb38414814e0ed17) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-permission-auto-review): pass the session ID on reviewer model calls ([#22](https://github.com/mzwing/pi-packages/issues/22))
+
 ## 0.5.1
 
 ### Patch Changes

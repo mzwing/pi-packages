@@ -245,7 +245,7 @@ function createHarness(options: HarnessOptions = {}) {
         timeoutMs: options.timeoutMs ?? 90_000,
       },
       registry,
-      sessionManager: { getBranch },
+      sessionManager: { getBranch, getSessionId: () => 'session-1' },
       circuitBreaker,
     },
     {
@@ -290,6 +290,7 @@ describe('permission reviewer', () => {
       maxRetries: 0,
       maxTokens: 1_000,
       reasoning: 'low',
+      sessionId: 'session-1',
     })
     expect(log.review.mock.calls[0]?.[1]).toMatchObject({
       policyRevision: 'openai-codex/26cb4d73e2ce25575644038d7af5beb2440d0ed0+pi2',

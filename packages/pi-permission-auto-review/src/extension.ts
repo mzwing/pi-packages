@@ -14,7 +14,7 @@ import { createPermissionReviewer } from './reviewer.js'
 
 interface SessionRuntime {
   registry: ModelRegistry
-  sessionManager: Pick<SessionManager, 'getBranch'>
+  sessionManager: Pick<SessionManager, 'getBranch' | 'getSessionId'>
 }
 
 interface ReviewerFactoryOptions extends SessionRuntime {

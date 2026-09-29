@@ -31,7 +31,7 @@ type FailureCategory =
 export interface ReviewerRuntime {
   config: AutoReviewConfig
   registry: ReviewModelRegistry
-  sessionManager: Pick<SessionManager, 'getBranch'>
+  sessionManager: Pick<SessionManager, 'getBranch' | 'getSessionId'>
   circuitBreaker: DenialCircuitBreaker
   sessionSignal?: AbortSignal
 }
@@ -123,6 +123,9 @@ function buildStreamOptions(
     maxTokens: MAX_OUTPUT_TOKENS,
     signal,
     timeoutMs,
+    // Gateways such as opencode-go reject requests without a session ID,
+    // which pi-ai sends as `x-opencode-session` when this is set.
+    sessionId: runtime.sessionManager.getSessionId(),
   }
   if (reasoning && runtime.config.reasoning !== 'off') {
     options.reasoning = runtime.config.reasoning

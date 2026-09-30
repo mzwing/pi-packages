@@ -98,6 +98,8 @@ function createPiHarness(): Harness {
 
 interface RegistryOptions {
   models?: SnapshotModel[]
+  /** Image and classifier models, listed only through `getAllModels`. */
+  others?: unknown[]
   registeredConfig?: Record<string, unknown> | undefined
   nativeProvider?: unknown
   dynamic?: boolean
@@ -118,6 +120,7 @@ function createRegistry(options: RegistryOptions = {}): ModelRegistry & Registry
     provider: {
       id: 'relay',
       getModels: () => state.models,
+      ...(options.others === undefined ? {} : { getAllModels: () => [...state.models, ...(options.others ?? [])] }),
       ...(options.dynamic === true ? { refreshModels: async () => {} } : {}),
     },
     getProvider: (_id: string) => (options.missing === true ? undefined : state.provider),
@@ -245,6 +248,17 @@ describe('factory', () => {
     expect(harness.commands.has('model-info')).toBe(true)
   })
 })
+
+const IMAGE_MODEL = {
+  id: 'gpt-5.5-mini',
+  name: 'GPT-5.5 mini Image',
+  type: 'image',
+  api: 'openrouter-images',
+  baseUrl: 'http://localhost:8317/v1',
+  input: ['text'],
+  output: ['image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+}
 
 describe('session start', () => {
   it('returns before the catalog resolves, then registers once it does', async () => {
@@ -399,6 +413,17 @@ describe('a sibling that refreshes its own list', () => {
     expect(refreshed[0]?.baseUrl).toBe('http://localhost:8317/v1')
   })
 
+  it('keeps an image entry exactly as the sibling wrote it, even under a chat model id', async () => {
+    const registered = { ...siblingConfig(), refreshModels: async () => [{ ...definition }, IMAGE_MODEL] }
+    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
+    harness.start()
+    await harness.flush()
+
+    const refreshed = await (harness.registrations[0]?.config['refreshModels'] as Refresh)({})
+    expect(refreshed[0]?.contextWindow).toBe(200_000)
+    expect(refreshed[1]).toBe(IMAGE_MODEL)
+  })
+
   it('does not stack a decorator on a decorator across a reload', async () => {
     let calls = 0
     const registered = {
@@ -447,6 +472,33 @@ describe('registration shape', () => {
     const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
     expect(registered.find(model => model.id === 'gpt-5.5')?.contextWindow).toBe(400_000)
     expect(registered.find(model => model.id === 'mystery-model')?.contextWindow).toBe(4_096)
+  })
+
+  // A registered list replaces every model type, so one without these would delete them.
+  it('carries image and classifier models through untouched', async () => {
+    const harness = setup({ registry: createRegistry({ others: [IMAGE_MODEL] }) })
+    harness.start()
+    await harness.flush()
+
+    const registered = harness.registrations[0]?.config['models'] as unknown[]
+    expect(registered).toHaveLength(2)
+    expect(registered).toContain(IMAGE_MODEL)
+
+    harness.emit('before_agent_start', harness.context)
+    expect(harness.registrations).toHaveLength(1)
+  })
+
+  it('leaves virtual models to Pi, which layers them over whatever is registered', async () => {
+    const virtual = makeSnapshot({ id: 'auto', api: 'pi-virtual', baseUrl: '' })
+    const harness = setup({ registry: createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' }), virtual] }) })
+    harness.start()
+    await harness.flush()
+
+    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
+    expect(registered.map(model => model.id)).toEqual(['gpt-5.5'])
+
+    harness.emit('before_agent_start', harness.context)
+    expect(harness.registrations).toHaveLength(1)
   })
 
   it('pins api and baseUrl from the snapshot', async () => {

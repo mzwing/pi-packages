@@ -35,7 +35,7 @@ pi install npm:@gotgenes/pi-permission-system # dependency
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
-Pi 0.86.x - 0.87.x and `@gotgenes/pi-permission-system` 33.x - 35.x are required.
+Pi 0.99.x (0.99.1 or later) and `@gotgenes/pi-permission-system` 33.x - 36.x are required.
 
 The authorizer registers itself against the service keyed by its own session id, so a subagent's reviewer lands in its own node. A node that relays its asks to a live parent session runs no chain of its own, and the parent session's reviewer decides for it.
 
@@ -63,7 +63,7 @@ Extension config can be omitted. The defaults are:
 }
 ```
 
-`codex-auto-review` is an official hidden model. The extension derives it from Pi's `openai-codex` provider and reuses the existing Codex login.
+`codex-auto-review` is an official hidden model. The extension derives it from Pi's `openai-codex` provider and reuses its login, listed as "OpenAI Codex (legacy)" in `/login`; signing in with ChatGPT on the `openai` provider does not cover it.
 
 ## Configuration
 

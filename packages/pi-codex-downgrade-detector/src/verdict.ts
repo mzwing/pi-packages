@@ -90,6 +90,13 @@ function judgeModel(
 
   const sameFamily =
     requestedId?.family !== undefined && servedId?.family !== undefined && requestedId.family === servedId.family
+  if (sameFamily && requestedId.classRank !== undefined && servedId.classRank !== undefined) {
+    const difference = servedId.classRank - requestedId.classRank
+    if (difference !== 0) {
+      return substitution(directionFor(difference))
+    }
+  }
+
   if (sameFamily && requestedId.version.length > 0 && servedId.version.length > 0) {
     const difference = compareVersions(servedId.version, requestedId.version)
     if (difference !== 0) {

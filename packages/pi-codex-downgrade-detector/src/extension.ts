@@ -84,14 +84,12 @@ export function createDetectorExtension(pi: ExtensionAPI, dependencies: Detector
   let verdicts: Verdict[] = []
   let pendingHeaders: HeaderObservation | undefined
   let pendingEffort: string | undefined
-  let selectedEffort: string | undefined
   const notified = new Set<string>()
 
   function reset(): void {
     verdicts = []
     pendingHeaders = undefined
     pendingEffort = undefined
-    selectedEffort = undefined
     notified.clear()
   }
 
@@ -117,9 +115,8 @@ export function createDetectorExtension(pi: ExtensionAPI, dependencies: Detector
     context.ui.setWidget(EXTENSION_ID, undefined)
   })
 
-  pi.on('before_provider_request', (event, context) => {
+  pi.on('before_provider_request', event => {
     pendingEffort = observeRequestPayload(event.payload)
-    selectedEffort = context.thinkingLevel
   })
 
   pi.on('after_provider_response', event => {
@@ -141,9 +138,13 @@ export function createDetectorExtension(pi: ExtensionAPI, dependencies: Detector
       const effort =
         config.checkEffort && registry !== undefined
           ? {
-              selectedEffort,
               sentEffort,
-              expectedEffort: expectedEffortFor(registry, assistant.provider, assistant.requestedModel, selectedEffort),
+              expectedEffort: expectedEffortFor(
+                registry,
+                assistant.provider,
+                assistant.requestedModel,
+                assistant.selectedEffort,
+              ),
             }
           : {}
       const turn = buildTurnObservation({ assistant, headers, ...effort })

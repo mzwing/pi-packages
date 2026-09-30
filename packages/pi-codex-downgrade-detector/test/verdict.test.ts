@@ -87,6 +87,13 @@ describe('judgeTurn model ladder', () => {
     expect(isSubstitution(verdict)).toBe(true)
   })
 
+  it('orders OpenAI classes astra > sol > terra > luna before their version', () => {
+    expect(judge({ requestedModel: 'gpt-6.1-sol', servedModel: 'gpt-6-astra' }).direction).toBe('higher')
+    expect(judge({ requestedModel: 'gpt-7-sol', servedModel: 'gpt-7.1-luna' }).direction).toBe('lower')
+    expect(judge({ requestedModel: 'gpt-7-terra', servedModel: 'gpt-6-sol' }).direction).toBe('higher')
+    expect(judge({ requestedModel: 'gpt-7.1-sol', servedModel: 'gpt-7-sol' }).direction).toBe('lower')
+  })
+
   it('infers a direction from the generation when neither slug is ranked', () => {
     expect(judge({ requestedModel: 'gpt-5.9-quasar', servedModel: 'gpt-5.8-quasar' }).direction).toBe('lower')
     expect(judge({ requestedModel: 'gpt-5.8-quasar', servedModel: 'gpt-5.9-quasar' }).direction).toBe('higher')

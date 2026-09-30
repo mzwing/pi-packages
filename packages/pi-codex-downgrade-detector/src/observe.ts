@@ -3,6 +3,8 @@ const SERVED_MODEL_HEADERS = ['openai-model', 'x-openai-model']
 const FASTER_MODEL_HEADER = 'x-codex-safety-buffering-faster-model'
 const BUFFERING_ENABLED_HEADER = 'x-codex-safety-buffering-enabled'
 const ROUTING_HEADERS = [...SERVED_MODEL_HEADERS, FASTER_MODEL_HEADER, BUFFERING_ENABLED_HEADER, 'x-request-id']
+/** Pi's virtual models carry this api, and a failed routing leaves it on the message. */
+const VIRTUAL_API = 'pi-virtual'
 
 export type BackendFamily =
   | 'openai-responses'
@@ -25,6 +27,8 @@ export interface AssistantObservation {
   requestedModel: string
   responseModel: string | undefined
   responseId: string | undefined
+  /** The Pi thinking level the turn went out at, which a virtual model's router may have picked. */
+  selectedEffort: string | undefined
 }
 
 export interface TurnObservation extends AssistantObservation {
@@ -34,8 +38,6 @@ export interface TurnObservation extends AssistantObservation {
   sawRoutingHeaders: boolean
   backendFamily: BackendFamily
   status: number | undefined
-  /** The Pi thinking level in force for this turn. */
-  selectedEffort: string | undefined
   /** What that level maps to for this model, which is what Pi should have sent. */
   expectedEffort: string | undefined
   /** What actually went on the wire. */
@@ -46,7 +48,6 @@ export interface BuildTurnOptions {
   assistant: AssistantObservation
   headers?: HeaderObservation | undefined
   sentEffort?: string | undefined
-  selectedEffort?: string | undefined
   expectedEffort?: string | undefined
 }
 
@@ -112,7 +113,8 @@ export function backendFamily(responseId: string | undefined): BackendFamily {
 /** Narrows a `message_end` payload to the assistant fields this extension reads. */
 export function observeAssistantMessage(message: unknown): AssistantObservation | undefined {
   const record = asRecord(message)
-  if (record === undefined || record['role'] !== 'assistant') {
+  // A turn that failed to route never reached a provider.
+  if (record === undefined || record['role'] !== 'assistant' || record['api'] === VIRTUAL_API) {
     return undefined
   }
   const provider = readString(record, 'provider')
@@ -126,6 +128,7 @@ export function observeAssistantMessage(message: unknown): AssistantObservation 
     requestedModel,
     responseModel: readString(record, 'responseModel'),
     responseId: readString(record, 'responseId'),
+    selectedEffort: readString(record, 'thinkingLevel'),
   }
 }
 
@@ -146,7 +149,6 @@ export function buildTurnObservation(options: BuildTurnOptions): TurnObservation
     sawRoutingHeaders: headers?.sawRoutingHeaders ?? false,
     backendFamily: backendFamily(assistant.responseId),
     status: headers?.status,
-    selectedEffort: options.selectedEffort,
     expectedEffort: options.expectedEffort,
     sentEffort: options.sentEffort,
   }

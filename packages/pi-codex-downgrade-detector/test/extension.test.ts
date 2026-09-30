@@ -125,11 +125,10 @@ describe('createDetectorExtension', () => {
     const harness = start({
       models: [{ id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: 'high' } }],
     })
-    harness.context.thinkingLevel = 'xhigh'
 
     harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
     harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage() })
+    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
 
     expect(harness.ui.statuses.at(-1)).toBe('⚠ codex')
   })
@@ -138,22 +137,32 @@ describe('createDetectorExtension', () => {
     const harness = start({
       models: [{ id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: 'high' } }],
     })
-    harness.context.thinkingLevel = 'xhigh'
 
     harness.emit('before_provider_request', { payload: { reasoning: { effort: 'high' } } })
     harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage() })
+    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
+
+    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
+  })
+
+  // A virtual model keeps the selection in the context while its router sends another level.
+  it('judges the level a turn went out at, not the one selected', () => {
+    const harness = start()
+    harness.context.thinkingLevel = 'high'
+
+    harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
+    harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
+    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'medium' }) })
 
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
   })
 
   it('skips the effort axis when checkEffort is off', () => {
     const harness = start({ config: { checkEffort: false } })
-    harness.context.thinkingLevel = 'xhigh'
 
     harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
     harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage() })
+    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
 
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
   })

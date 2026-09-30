@@ -1,12 +1,12 @@
 import type { CatalogSnapshot } from './catalog.js'
 import type { CompletionContext, ModelReport } from './complete.js'
-import type { EnrichedModel } from './merge.js'
 import type { UserAuthoredMap } from './models-json.js'
-import type { ResolvedConfig, ResolvedProvider, SnapshotModel } from './types.js'
+import type { ChatModelConfig, ResolvedConfig, ResolvedProvider, SnapshotModel } from './types.js'
 import type { Api, Provider } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ModelRegistry, ProviderConfig, ProviderModelConfig } from '@earendil-works/pi-coding-agent'
 import { completeModel } from './complete.js'
 import { isOurWrapper, NativeWrap, unwrapProvider } from './native-wrap.js'
+import { chatModels, isChat, passthroughModels } from './provider-models.js'
 
 export type { ModelReport } from './complete.js'
 
@@ -52,6 +52,8 @@ interface Tracked {
   strategy: ProviderStrategy
   /** `decorate` / `replace`: the list as Pi held it before our registration shadowed it. */
   snapshot: SnapshotModel[]
+  /** `decorate` / `replace`: the entries we never complete, which the registered list has to carry. */
+  others: ProviderModelConfig[]
   /** `decorate`: the wrapper handed to Pi, built once so re-applying does not churn it. */
   refresh: RefreshModels | undefined
   /** `decorate`: provider-level fallbacks for a definition that omits them. */
@@ -66,7 +68,7 @@ interface Applied {
 }
 
 interface CompletedList {
-  models: EnrichedModel[]
+  models: ChatModelConfig[]
   reports: ModelReport[]
 }
 
@@ -74,7 +76,7 @@ export class ProviderApplier {
   private readonly tracked = new Map<string, Tracked>()
   private readonly skipped = new Map<string, string>()
   private readonly reports = new Map<string, ProviderReport>()
-  private readonly lastRegistered = new Map<string, EnrichedModel[]>()
+  private readonly lastRegistered = new Map<string, ProviderModelConfig[]>()
   /** Outlives `capture`, so a `/reload` reuses one wrapper per provider instead of nesting them. */
   private readonly wraps = new Map<string, NativeWrap>()
   /** Provider to the catalog fingerprint it was last registered with, to skip a no-op re-register. */
@@ -121,15 +123,17 @@ export class ProviderApplier {
         continue
       }
 
-      const snapshot = [...pristine.getModels()] as SnapshotModel[]
+      const snapshot: SnapshotModel[] = chatModels(pristine)
       if (snapshot.length === 0) {
         this.skip(provider.id, 'no models to complete')
         continue
       }
+      const others = passthroughModels(pristine)
 
       const sibling = undecorate((registered as RefreshCapable | undefined)?.refreshModels)
       if (sibling !== undefined) {
         this.track(provider, 'decorate', snapshot, {
+          others,
           refresh: this.decorate(provider.id, sibling),
           api: registered?.api,
           baseUrl: registered?.baseUrl,
@@ -144,7 +148,7 @@ export class ProviderApplier {
           }, so completing it freezes newly discovered models until the next session`,
         )
       }
-      this.track(provider, 'replace', snapshot, {})
+      this.track(provider, 'replace', snapshot, { others })
     }
   }
 
@@ -177,12 +181,13 @@ export class ProviderApplier {
       if (live === undefined) {
         continue
       }
-      const liveModels = [...live.getModels()] as SnapshotModel[]
+      const liveModels: SnapshotModel[] = chatModels(live)
       const registered = this.lastRegistered.get(providerId)
       if (liveModels.length === 0 || (registered !== undefined && sameIds(liveModels, registered))) {
         continue
       }
       tracked.snapshot = liveModels
+      tracked.others = passthroughModels(live)
       drifted = true
     }
 
@@ -238,12 +243,18 @@ export class ProviderApplier {
     provider: ResolvedProvider,
     strategy: ProviderStrategy,
     snapshot: SnapshotModel[],
-    extra: { refresh?: RefreshModels | undefined; api?: Api | undefined; baseUrl?: string | undefined },
+    extra: {
+      others?: ProviderModelConfig[] | undefined
+      refresh?: RefreshModels | undefined
+      api?: Api | undefined
+      baseUrl?: string | undefined
+    },
   ): void {
     this.tracked.set(provider.id, {
       provider,
       strategy,
       snapshot,
+      others: extra.others ?? [],
       refresh: extra.refresh,
       api: extra.api,
       baseUrl: extra.baseUrl,
@@ -348,12 +359,11 @@ export class ProviderApplier {
       // `models` plus, for a sibling that refreshes, the hook that keeps the completion alive.
       // Nothing else: registerProvider merges defined keys and never expires them, so any other key
       // would permanently shadow the sibling's — and a relay's apiKey usually lives there.
+      const models: ProviderModelConfig[] = [...completed.models, ...tracked.others]
       const config: ProviderConfig =
-        tracked.refresh === undefined
-          ? { models: completed.models }
-          : { models: completed.models, refreshModels: tracked.refresh }
+        tracked.refresh === undefined ? { models } : { models, refreshModels: tracked.refresh }
       pi.registerProvider(providerId, config)
-      this.lastRegistered.set(providerId, completed.models)
+      this.lastRegistered.set(providerId, models)
       this.reports.set(providerId, {
         provider: providerId,
         status: 'applied',
@@ -393,10 +403,14 @@ export class ProviderApplier {
         return fresh
       }
       tracked.snapshot = snapshot
+      tracked.others = fresh.filter(definition => !isChat(definition))
 
-      // A definition we could not type stays exactly as the sibling wrote it, in place.
+      // A definition we could not type stays exactly as the sibling wrote it, in place, and so does
+      // an image or classifier entry that happens to share a chat model's id.
       const byId = new Map(completed.models.map(model => [model.id, model]))
-      const models: ProviderModelConfig[] = fresh.map(definition => byId.get(definition.id) ?? definition)
+      const models: ProviderModelConfig[] = fresh.map(definition =>
+        isChat(definition) ? (byId.get(definition.id) ?? definition) : definition,
+      )
       this.lastRegistered.set(providerId, models)
       this.reports.set(providerId, {
         provider: providerId,
@@ -427,7 +441,7 @@ export class ProviderApplier {
       authored: applied.authored.get(tracked.provider.id),
     }
 
-    const models: EnrichedModel[] = []
+    const models: ChatModelConfig[] = []
     const reports: ModelReport[] = []
 
     // Every model, always: a registration replaces the list wholesale, so anything omitted here
@@ -472,6 +486,9 @@ function toSnapshot(
   api: Api | undefined,
   baseUrl: string | undefined,
 ): SnapshotModel | undefined {
+  if (!isChat(definition)) {
+    return undefined
+  }
   const resolvedApi = definition.api ?? api
   const resolvedBaseUrl = definition.baseUrl ?? baseUrl
   if (resolvedApi === undefined || resolvedBaseUrl === undefined) {
@@ -481,16 +498,17 @@ function toSnapshot(
   return { ...definition, api: resolvedApi, baseUrl: resolvedBaseUrl }
 }
 
-function sameIds(live: readonly SnapshotModel[], registered: readonly EnrichedModel[]): boolean {
-  if (live.length !== registered.length) {
+function sameIds(live: readonly SnapshotModel[], registered: readonly ProviderModelConfig[]): boolean {
+  const chat = registered.filter(model => isChat(model))
+  if (live.length !== chat.length) {
     return false
   }
-  const ids = new Set(registered.map(model => model.id))
+  const ids = new Set(chat.map(model => model.id))
 
   return live.every(model => ids.has(model.id))
 }
 
-function isSolelyOurRegistration(stored: object | undefined, models: EnrichedModel[]): boolean {
+function isSolelyOurRegistration(stored: object | undefined, models: ProviderModelConfig[]): boolean {
   if (stored === undefined) {
     return false
   }

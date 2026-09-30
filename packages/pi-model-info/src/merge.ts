@@ -1,4 +1,5 @@
 import type {
+  ChatModelConfig,
   MetadataOverride,
   ModelCost,
   ModelGate,
@@ -10,17 +11,8 @@ import type {
   ThinkingLevelMap,
   ThinkingLevelMapInput,
 } from './types.js'
-import type { ProviderModelConfig } from '@earendil-works/pi-coding-agent'
 import { compact } from './compact.js'
 import { THINKING_LEVELS } from './types.js'
-
-/**
- * `ProviderModelConfig` omits `samplingParams`, but the runtime shape has it and `applyExtension`
- * spreads the definition verbatim — carrying it here is what keeps a user's sampling defaults alive.
- */
-export interface EnrichedModel extends ProviderModelConfig {
-  samplingParams?: Record<string, unknown> | undefined
-}
 
 export interface MergeInput {
   snapshot: SnapshotModel
@@ -32,7 +24,7 @@ export interface MergeInput {
 }
 
 export interface MergeOutput {
-  model: EnrichedModel
+  model: ChatModelConfig
   issues: string[]
   /** Field name to the layer that produced its final value, for `/model-info`. */
   provenance: Map<string, string>
@@ -312,7 +304,7 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
     provenance.set('input', 'existing')
   }
 
-  const model = compact<EnrichedModel>({
+  const model = compact<ChatModelConfig>({
     id: snapshot.id,
     name: draft.name,
     // Pinned rather than inherited: `applyExtension` falls back to `models[0]` and throws when it

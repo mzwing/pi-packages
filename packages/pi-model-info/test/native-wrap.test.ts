@@ -6,13 +6,26 @@ import { describe, expect, it } from 'vitest'
 import { isOurWrapper, NativeWrap, unwrapProvider } from '../src/native-wrap.js'
 import { makeConfig, makeIndex, makeProvider, makeSnapshot } from './helpers.js'
 
-function base(models: SnapshotModel[]): Provider & { models: SnapshotModel[] } {
+const image = {
+  id: 'gpt-5.5',
+  name: 'GPT-5.5 Image',
+  type: 'image',
+  api: 'openrouter-images',
+  provider: 'relay',
+  baseUrl: 'http://localhost:8317/v1',
+  input: ['text'],
+  output: ['image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+}
+
+function base(models: SnapshotModel[], others?: unknown[]): Provider & { models: SnapshotModel[] } {
   const state = {
     id: 'relay',
     name: 'Relay',
     models,
     auth: {},
     getModels: () => state.models,
+    ...(others === undefined ? {} : { getAllModels: () => [...state.models, ...others] }),
     refreshModels: async () => {},
     stream: () => {
       throw new Error('unused')
@@ -47,6 +60,32 @@ describe('a wrapped provider', () => {
     const wrapper = new NativeWrap(pristine, { context: () => context(), onReports: () => {}, warn: () => {} })
 
     expect(wrapper.provider.getModels()[0]).toMatchObject({ provider: 'relay', contextWindow: 400_000 })
+  })
+
+  it('lists the same completion through getAllModels, next to the models it never completes', () => {
+    const pristine = base([makeSnapshot({ id: 'gpt-5.5' })], [image])
+    const wrapper = new NativeWrap(pristine, { context: () => context(), onReports: () => {}, warn: () => {} })
+
+    const [chat] = wrapper.provider.getModels()
+    expect(chat?.contextWindow).toBe(400_000)
+    expect(wrapper.provider.getAllModels?.()).toEqual([chat, image])
+
+    const chatOnly = new NativeWrap(base([makeSnapshot()]), {
+      context: () => undefined,
+      onReports: () => {},
+      warn: () => {},
+    })
+    expect('getAllModels' in chatOnly.provider).toBe(false)
+  })
+
+  it('drops a virtual model that came with the base, since Pi layers the live ones back on', () => {
+    const pristine = base([
+      makeSnapshot({ id: 'gpt-5.5' }),
+      makeSnapshot({ id: 'auto', api: 'pi-virtual', baseUrl: '' }),
+    ])
+    const wrapper = new NativeWrap(pristine, { context: () => context(), onReports: () => {}, warn: () => {} })
+
+    expect(wrapper.provider.getModels().map(model => model.id)).toEqual(['gpt-5.5'])
   })
 
   it('hands back the base list while no catalog is loaded', () => {

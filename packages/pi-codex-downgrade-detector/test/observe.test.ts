@@ -70,11 +70,14 @@ describe('backendFamily', () => {
 
 describe('observeAssistantMessage', () => {
   it('narrows an assistant message to the fields the check reads', () => {
-    expect(observeAssistantMessage(assistantMessage({ responseModel: 'gpt-5.6-luna', responseId: 'resp_1' }))).toEqual({
+    const message = assistantMessage({ responseModel: 'gpt-5.6-luna', responseId: 'resp_1', thinkingLevel: 'high' })
+
+    expect(observeAssistantMessage(message)).toEqual({
       provider: 'openai-codex',
       requestedModel: 'gpt-6-astra',
       responseModel: 'gpt-5.6-luna',
       responseId: 'resp_1',
+      selectedEffort: 'high',
     })
   })
 
@@ -86,6 +89,10 @@ describe('observeAssistantMessage', () => {
   it('ignores an assistant message with no provider or model to compare', () => {
     expect(observeAssistantMessage({ role: 'assistant', provider: 'openai-codex' })).toBeUndefined()
   })
+
+  it('ignores a turn a virtual model failed to route, which no provider ever saw', () => {
+    expect(observeAssistantMessage(assistantMessage({ model: 'auto', api: 'pi-virtual' }))).toBeUndefined()
+  })
 })
 
 describe('buildTurnObservation', () => {
@@ -94,6 +101,7 @@ describe('buildTurnObservation', () => {
     requestedModel: 'gpt-6-astra',
     responseModel: 'gpt-5.5',
     responseId: 'resp_1',
+    selectedEffort: undefined,
   }
 
   it('prefers the server-stated header over the response model field', () => {

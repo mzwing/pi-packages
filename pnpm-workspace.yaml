@@ -5,8 +5,8 @@ packages:
   - packages/*
 
 catalog:
-  '@earendil-works/pi-ai': 0.87.1
-  '@earendil-works/pi-coding-agent': 0.87.1
+  '@earendil-works/pi-ai': 0.99.1
+  '@earendil-works/pi-coding-agent': 0.99.1
   '@types/node': 26.6.3
   tsdown: 0.23.0
   typescript: 7.0.2
@@ -14,8 +14,8 @@ catalog:
 
 catalogs:
   pi-peer:
-    '@earendil-works/pi-ai': ^0.86.0 || ^0.87.0
-    '@earendil-works/pi-coding-agent': ^0.86.0 || ^0.87.0
+    '@earendil-works/pi-ai': ^0.99.1
+    '@earendil-works/pi-coding-agent': ^0.99.1
 
 allowBuilds:
   '@google/genai': true
@@ -23,4 +23,12 @@ allowBuilds:
   protobufjs: true
   tree-sitter-bash: true
 minimumReleaseAgeExclude:
-  - '@gotgenes/pi-permission-system@35.0.1'
+  - '@gotgenes/pi-permission-system@36.2.0'
+  - '@earendil-works/chord@0.99.1'
+  - '@earendil-works/pi-agent-core@0.99.1'
+  - '@earendil-works/pi-ai@0.99.1'
+  - '@earendil-works/pi-codemode@0.99.1'
+  - '@earendil-works/pi-coding-agent@0.99.1'
+  - '@earendil-works/pi-mcp@0.99.1'
+  - '@earendil-works/pi-telemetry@0.99.1'
+  - '@earendil-works/pi-tui@0.99.1'

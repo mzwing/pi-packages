@@ -1,6 +1,7 @@
 import type { CompletionContext, ModelReport } from './complete.js'
 import type { Api, Model, Provider } from '@earendil-works/pi-ai'
 import { completeModel } from './complete.js'
+import { chatModels, passthroughModels } from './provider-models.js'
 
 type PiModel = Model<Api>
 
@@ -55,6 +56,10 @@ export class NativeWrap {
       [WRAPPED]: pristine,
       getModels: () => this.completeAll(),
     }
+    // Pi's typed reads, `getModelsOfType()` and `getAllAvailable()` among them, list through this instead.
+    if (pristine.getAllModels !== undefined) {
+      wrapper.getAllModels = () => [...this.completeAll(), ...passthroughModels(pristine)]
+    }
     this.provider = wrapper
   }
 
@@ -64,7 +69,7 @@ export class NativeWrap {
   }
 
   private completeAll(): readonly PiModel[] {
-    const base = this.pristine.getModels()
+    const base = chatModels(this.pristine)
     const context = this.deps.context()
     if (context === undefined) {
       return base

@@ -1,6 +1,5 @@
 import type { CatalogSnapshot } from './catalog.js'
-import type { EnrichedModel } from './merge.js'
-import type { Resolution, ResolvedConfig, ResolvedProvider, SnapshotModel } from './types.js'
+import type { ChatModelConfig, Resolution, ResolvedConfig, ResolvedProvider, SnapshotModel } from './types.js'
 import { mergeMetadata } from './merge.js'
 import { resolveModel } from './resolver.js'
 
@@ -9,7 +8,7 @@ export interface ModelReport {
   resolution: Resolution
   provenance: Map<string, string>
   issues: string[]
-  model: EnrichedModel
+  model: ChatModelConfig
 }
 
 /**
@@ -25,7 +24,7 @@ export interface CompletionContext {
 }
 
 export interface Completion {
-  model: EnrichedModel
+  model: ChatModelConfig
   report: ModelReport
 }
 

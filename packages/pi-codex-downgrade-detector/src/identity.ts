@@ -4,9 +4,12 @@
  */
 const MODEL_TIERS: Record<string, number> = {
   'gpt-6-astra': 100,
+  'gpt-6.1-sol': 96,
+  'gpt-6-sol': 94,
   'gpt-5.6-sol': 90,
   'gpt-5.6-terra': 65,
   'gpt-5.5': 60,
+  'gpt-6-luna': 42,
   'gpt-5.6-luna': 40,
   'gpt-5.4': 38,
   'gpt-5.4-mini': 25,
@@ -30,6 +33,9 @@ const OPENAI_PREFIXES = [
   'davinci',
   'babbage',
 ]
+
+/** OpenAI's model classes, smallest first. The class orders two slugs before their version does. */
+const OPENAI_CLASSES = ['luna', 'terra', 'sol', 'astra']
 
 /** Tokens marking a deliberately smaller or cheaper sibling. */
 const SMALL_MODEL_MARKERS = new Set([
@@ -67,6 +73,8 @@ export interface SlugShape {
   variant: string | undefined
   sizeMarker: string | undefined
   largeMarker: string | undefined
+  /** Index into `OPENAI_CLASSES`, for an OpenAI slug that names one. */
+  classRank: number | undefined
 }
 
 export interface ModelIdentity extends SlugShape {
@@ -106,6 +114,7 @@ export function parseSlug(slug: string): SlugShape {
     variant: undefined,
     sizeMarker: undefined,
     largeMarker: undefined,
+    classRank: undefined,
   }
   if (key.length === 0) {
     return shape
@@ -148,6 +157,10 @@ export function parseSlug(slug: string): SlugShape {
     }
     if (shape.largeMarker === undefined && LARGE_MODEL_MARKERS.has(token)) {
       shape.largeMarker = token
+    }
+    const classRank = OPENAI_CLASSES.indexOf(token)
+    if (shape.classRank === undefined && classRank >= 0 && shape.vendor === 'openai') {
+      shape.classRank = classRank
     }
   }
 

@@ -23,9 +23,9 @@ This extension looks each model up in two catalogs and fills the gaps at runtime
 ## What it does not do
 
 It never creates providers, never discovers models, never changes `id` / `provider` / `baseUrl` /
-`api` / auth / transport, and never writes to any of your files. Where it wraps a provider it
-delegates that provider's own auth, transport and refresh behaviour untouched. Remove it and Pi
-goes back to exactly what it did before.
+`api` / auth / transport, and never writes to any of your files. It leaves image, classifier and
+virtual models alone. Where it wraps a provider it delegates that provider's own auth, transport
+and refresh behaviour untouched. Remove it and Pi goes back to exactly what it did before.
 
 ## Install
 

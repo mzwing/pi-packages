@@ -1,11 +1,14 @@
 import type { Api } from '@earendil-works/pi-ai'
 import type { ProviderModelConfig } from '@earendil-works/pi-coding-agent'
 
-export type ModelCost = ProviderModelConfig['cost']
+/** Pi exports only the union; chat is the one kind this extension completes. */
+export type ChatModelConfig = Extract<ProviderModelConfig, { type?: 'chat' }>
+
+export type ModelCost = ChatModelConfig['cost']
 export type ModelCostTier = NonNullable<ModelCost['tiers']>[number]
-export type ModelInput = ProviderModelConfig['input']
-export type ModelCompat = ProviderModelConfig['compat']
-export type ThinkingLevelMap = NonNullable<ProviderModelConfig['thinkingLevelMap']>
+export type ModelInput = ChatModelConfig['input']
+export type ModelCompat = ChatModelConfig['compat']
+export type ThinkingLevelMap = NonNullable<ChatModelConfig['thinkingLevelMap']>
 
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 type ThinkingLevel = (typeof THINKING_LEVELS)[number]
@@ -28,8 +31,8 @@ export interface SnapshotModel {
   samplingParams?: Record<string, unknown> | undefined
   headers?: Record<string, string> | undefined
   compat?: ModelCompat | undefined
-  promptCache?: ProviderModelConfig['promptCache'] | undefined
-  inputLimits?: ProviderModelConfig['inputLimits'] | undefined
+  promptCache?: ChatModelConfig['promptCache'] | undefined
+  inputLimits?: ChatModelConfig['inputLimits'] | undefined
 }
 
 /** Spelled out because `Partial<ModelCost>` drops the `| undefined` a parsed config needs. */

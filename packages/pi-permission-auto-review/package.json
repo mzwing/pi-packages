@@ -66,7 +66,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
-    "@gotgenes/pi-permission-system": "35.0.1",
+    "@gotgenes/pi-permission-system": "36.2.0",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
@@ -75,7 +75,7 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": "catalog:pi-peer",
     "@earendil-works/pi-coding-agent": "catalog:pi-peer",
-    "@gotgenes/pi-permission-system": "^33.0.0 || ^34.0.0 || ^35.0.0"
+    "@gotgenes/pi-permission-system": "^33.0.0 || ^34.0.0 || ^35.0.0 || ^36.0.0"
   },
   "engines": {
     "node": ">=24"

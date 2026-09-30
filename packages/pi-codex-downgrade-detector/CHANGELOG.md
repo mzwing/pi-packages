@@ -1,5 +1,11 @@
 # @mzwing/pi-codex-downgrade-detector
 
+## 0.4.0
+
+### Minor Changes
+
+- [`4f31a6f`](https://github.com/mzwing/pi-packages/commit/4f31a6f364eeab49b907940a8dc88bbf9e844f78) Thanks [@mzwing](https://github.com/mzwing)! - feat: adapt to Pi 0.99.1 and accept @gotgenes/pi-permission-system v36
+
 ## 0.3.1
 
 ### Patch Changes

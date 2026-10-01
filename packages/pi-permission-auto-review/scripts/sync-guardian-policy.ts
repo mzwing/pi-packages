@@ -1,22 +1,9 @@
-/**
- * Report upstream Codex Guardian policy changes since the pinned revision.
- *
- *   node --experimental-strip-types scripts/sync-guardian-policy.ts [--ref <ref>] [--pin]
- *
- * The bundled policy in `src/policy.ts` is a Pi adaptation, not a copy — Pi's
- * reviewer has no tools and a different evidence-provenance model, so upstream
- * wording cannot be dropped in mechanically. This script therefore never edits
- * the policy text. It answers one question: has upstream moved, and which
- * commits do I need to read?
- *
- * Default run reports only, exiting non-zero when upstream moved so CI can fail.
- * `--pin` records the new revision in `src/upstream.ts` — run it as the final
- * step *after* porting the changes by hand, never before: POLICY_REVISION goes
- * into the permission review log, so a pin that outruns the text is a false
- * audit record.
- *
- * Set `GITHUB_TOKEN` to lift the 60-requests/hour anonymous rate limit.
- */
+// Reports the upstream Codex Guardian commits since the pinned revision; the policy text is always ported by hand.
+//
+//   pnpm sync:policy [--ref <ref>] [--pin]
+//
+// Exits non-zero when upstream moved. Pin only after porting: POLICY_REVISION goes into the permission review log,
+// so a pin that outruns the text is a false audit record. GITHUB_TOKEN lifts the anonymous rate limit.
 import { readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -33,8 +20,7 @@ const MANIFEST_PATH = fileURLToPath(new URL('../src/upstream.ts', import.meta.ur
 const REVISION_PATTERN = /(export const UPSTREAM_REVISION = ')[\da-f]{40}(')/
 
 const { values } = parseArgs({
-  // Drop the separator pnpm forwards on `pnpm sync:policy -- --pin`; parseArgs
-  // would otherwise treat everything after it as positional and ignore the flag.
+  // pnpm forwards the `--` of `pnpm sync:policy -- --pin`, after which parseArgs would ignore the flag.
   args: process.argv.slice(2).filter(argument => argument !== '--'),
   options: {
     ref: { type: 'string', default: 'main' },
@@ -95,11 +81,7 @@ if (pinned === undefined) {
 
 const heads = await Promise.all(UPSTREAM_FILES.map(async file => ({ file, commits: await history(file, values.ref) })))
 
-// GitHub's commits API does not follow renames, so a tracked file with no
-// history is unreachable rather than unchanged: the manifest path went stale
-// when upstream reorganized, or `--ref` predates the move. Refuse both here —
-// otherwise one empty file is silently reported as "unchanged" below, and all
-// of them empty crashes the initial-value-free reduce.
+// The commits API does not follow renames, so a file with no history moved away rather than stayed unchanged.
 const unresolved = heads.filter(head => head.commits.length === 0)
 if (unresolved.length > 0) {
   throw new Error(
@@ -108,8 +90,7 @@ if (unresolved.length > 0) {
   )
 }
 
-// Each tracked file moves independently, so the revision to pin is the newest
-// commit across all of them — the same thing POLICY_REVISION claims.
+// The files move independently, so the revision to pin is the newest commit across all of them.
 const newest = heads
   .flatMap(head => head.commits.slice(0, 1))
   .reduce((left, right) => (right.committedAt > left.committedAt ? right : left))

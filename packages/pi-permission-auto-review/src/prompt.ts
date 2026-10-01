@@ -6,43 +6,29 @@ import { truncateToApproximateTokens } from './transcript.js'
 
 const MAX_ACTION_TOKENS = 10_000
 
+const PERMISSION_FIELDS = [
+  'requestId',
+  'source',
+  'agentName',
+  'payload',
+  'toolCallId',
+  'toolName',
+  'skillName',
+  'path',
+  'command',
+  'target',
+  'toolInputPreview',
+  'sessionLabel',
+  'surface',
+  'value',
+  'forwarding',
+  'sessionApproval',
+  'accessIntent',
+] as const
+
 export interface ReviewPrompt {
   systemPrompt: string
   userPrompt: string
-}
-
-function normalizePermissionDetails(details: PromptPermissionDetails): Record<string, unknown> {
-  const normalized: Record<string, unknown> = {}
-  const fields = [
-    'requestId',
-    'source',
-    'agentName',
-    // The complete structured description of the ask (ADR 0011 §2), which
-    // replaced the pre-rendered `message` sentence in 26.0.0. Every consumer is
-    // a render over it; this one elides under MAX_ACTION_TOKENS below.
-    'payload',
-    'toolCallId',
-    'toolName',
-    'skillName',
-    'path',
-    'command',
-    'target',
-    'toolInputPreview',
-    'sessionLabel',
-    'surface',
-    'value',
-    'forwarding',
-    'sessionApproval',
-    'accessIntent',
-  ] as const
-
-  for (const field of fields) {
-    const value = details[field]
-    if (value !== undefined) {
-      normalized[field] = value
-    }
-  }
-  return normalized
 }
 
 export function buildReviewPrompt(
@@ -56,10 +42,10 @@ export function buildReviewPrompt(
       : JSON.stringify({ source: 'metadata', retainedEntries: 0 })
   const omittedEntries = transcript.stats.transcriptEntriesOmitted
   const omission = omittedEntries > 0 ? `\n${JSON.stringify({ source: 'metadata', omittedEntries })}` : ''
-  const action = truncateToApproximateTokens(
-    JSON.stringify(normalizePermissionDetails(details), null, 2),
-    MAX_ACTION_TOKENS,
+  const request = Object.fromEntries(
+    PERMISSION_FIELDS.flatMap(field => (details[field] === undefined ? [] : [[field, details[field]]])),
   )
+  const action = truncateToApproximateTokens(JSON.stringify(request, null, 2), MAX_ACTION_TOKENS)
 
   return {
     systemPrompt: buildSystemPrompt(config),

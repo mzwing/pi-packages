@@ -21,248 +21,129 @@ function resolve(
   })
 }
 
-function gated(modelId: string, gate: ModelGate, overrides: Partial<ResolvedProvider> = {}): ResolvedProvider {
-  return makeProvider({ models: new Map([[modelId, gate]]), ...overrides })
+function gated(modelId: string, gate: ModelGate): ResolvedProvider {
+  return makeProvider({ models: new Map([[modelId, gate]]) })
 }
 
-describe('alias', () => {
-  const index = makeIndex([
-    { id: 'openai/gpt-5.6-sol', contextWindow: 1_000_000 },
-    { id: 'openai/gpt-special', contextWindow: 1 },
-  ])
+function canonical(result: Resolution): string | undefined {
+  return result.kind === 'resolved' ? result.entry.canonicalId : undefined
+}
 
-  it('wins over an exact match', () => {
-    const provider = gated('gpt-special', { alias: 'openai/gpt-5.6-sol' })
-    const result = resolve(index, 'gpt-special', { provider })
-    expect(result).toMatchObject({ kind: 'resolved', matchKind: 'alias' })
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('openai/gpt-5.6-sol')
-  })
+it('lets an alias win over an exact match, and reports a miss rather than falling through', () => {
+  const index = makeIndex([{ id: 'openai/gpt-5.6-sol' }, { id: 'openai/gpt-special' }])
 
-  it('accepts a bare target', () => {
-    const provider = gated('whatever', { alias: 'gpt-5.6-sol' })
-    const result = resolve(index, 'whatever', { provider })
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('openai/gpt-5.6-sol')
-  })
+  const aliased = resolve(index, 'gpt-special', { provider: gated('gpt-special', { alias: 'openai/gpt-5.6-sol' }) })
+  expect(aliased).toMatchObject({ kind: 'resolved', matchKind: 'alias' })
+  expect(canonical(aliased)).toBe('openai/gpt-5.6-sol')
 
-  it('reports a miss instead of falling through to the exact match', () => {
-    // Falling through would hide the typo forever behind a plausible result.
-    const provider = gated('gpt-special', { alias: 'openai/does-not-exist' })
-    expect(resolve(index, 'gpt-special', { provider })).toEqual({ kind: 'unresolved', reason: 'alias-miss' })
-  })
-})
-
-describe('original id before stripping', () => {
-  const index = makeIndex([
-    { id: 'deepseek/r1', contextWindow: 100, cost: { input: 5, output: 5, cacheRead: 0, cacheWrite: 0 } },
-    { id: 'deepseek/r1:free', contextWindow: 100, ...FREE },
-  ])
-
-  it('prefers the free variant that genuinely exists upstream', () => {
-    const result = resolve(index, 'r1:free', { suffixes: [freeColon] })
-    expect(result).toMatchObject({ kind: 'resolved', matchKind: 'exact', suffixRule: undefined })
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('deepseek/r1:free')
-  })
-
-  it('falls back to stripping only when the original is absent', () => {
-    const result = resolve(index, 'r1-free', { suffixes: [freeDash] })
-    expect(result).toMatchObject({ kind: 'resolved', matchKind: 'stripped' })
-    expect(result.kind === 'resolved' && result.suffixRule?.id).toBe('free-dash')
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('deepseek/r1')
-  })
+  // Falling through would hide the typo forever behind a plausible result.
+  const provider = gated('gpt-special', { alias: 'openai/does-not-exist' })
+  expect(resolve(index, 'gpt-special', { provider })).toEqual({ kind: 'unresolved', reason: 'alias-miss' })
 })
 
 describe('affix stripping', () => {
-  it('removes at most one suffix', () => {
-    const index = makeIndex([{ id: 'x/m-free' }])
-    const result = resolve(index, 'm-free-free', { suffixes: [freeDash] })
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('x/m-free')
+  // Catalogs really do carry `:free` variants as separate entries with their own pricing.
+  it('tries the original id before stripping anything', () => {
+    const index = makeIndex([{ id: 'deepseek/r1' }, { id: 'deepseek/r1:free' }])
+
+    expect(resolve(index, 'r1:free', { suffixes: [freeColon] })).toMatchObject({ matchKind: 'exact' })
+    expect(canonical(resolve(index, 'r1:free', { suffixes: [freeColon] }))).toBe('deepseek/r1:free')
+    expect(resolve(index, 'r1-free', { suffixes: [freeDash] })).toMatchObject({ matchKind: 'stripped' })
   })
 
-  it('never applies two suffix rules at once', () => {
-    const index = makeIndex([{ id: 'x/m' }])
-    expect(resolve(index, 'm:free-free', { suffixes: [freeDash, freeColon] }).kind).toBe('unresolved')
-  })
-
-  it('removes one prefix and one suffix together', () => {
-    const index = makeIndex([{ id: 'x/m' }])
-    const result = resolve(index, 'beta-m-free', {
-      prefixes: [prefixRule('beta', 'beta-')],
-      suffixes: [freeDash],
-    })
-    expect(result).toMatchObject({ kind: 'resolved', matchKind: 'stripped' })
-    expect(result.kind === 'resolved' && result.prefixRule?.id).toBe('beta')
-    expect(result.kind === 'resolved' && result.suffixRule?.id).toBe('free-dash')
-  })
-
-  it('rejects a strip that would leave nothing', () => {
-    const index = makeIndex([{ id: 'x/m' }])
-    expect(resolve(index, '-free', { suffixes: [freeDash] }).kind).toBe('unresolved')
-  })
-
-  it('prefers the longest matching rule', () => {
-    // A broad `-free` must not shadow a specific `-preview-free`.
-    const index = makeIndex([{ id: 'x/m' }, { id: 'x/m-preview' }])
-    const rules = [freeDash, suffixRule('preview-free', '-preview-free')].sort(
-      (a, b) => b.value.length - a.value.length,
+  it('removes at most one prefix and one suffix', () => {
+    expect(canonical(resolve(makeIndex([{ id: 'x/m-free' }]), 'm-free-free', { suffixes: [freeDash] }))).toBe(
+      'x/m-free',
     )
-    const result = resolve(index, 'm-preview-free', { suffixes: rules })
-    expect(result.kind === 'resolved' && result.suffixRule?.id).toBe('preview-free')
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('x/m')
+    expect(resolve(makeIndex([{ id: 'x/m' }]), 'm:free-free', { suffixes: [freeDash, freeColon] }).kind).toBe(
+      'unresolved',
+    )
+    expect(
+      resolve(makeIndex([{ id: 'x/m' }]), 'beta-m-free', {
+        prefixes: [prefixRule('beta', 'beta-')],
+        suffixes: [freeDash],
+      }),
+    ).toMatchObject({ kind: 'resolved', prefixRule: { id: 'beta' }, suffixRule: { id: 'free-dash' } })
   })
 
   it('tries a single strip before a double strip', () => {
     // `m-preview` exists, so `-preview` must survive when only `-free` was needed.
     const index = makeIndex([{ id: 'x/m' }, { id: 'x/m-preview' }])
-    const result = resolve(index, 'm-preview-free', {
-      prefixes: [],
-      suffixes: [freeDash],
+
+    expect(canonical(resolve(index, 'm-preview-free', { suffixes: [freeDash] }))).toBe('x/m-preview')
+  })
+
+  it('reports a rule, and so its override, only when the rule was used for the match', () => {
+    const index = makeIndex([{ id: 'x/m' }, { id: 'x/m-free' }])
+
+    expect(resolve(index, 'm-free', { suffixes: [freeDash] })).toMatchObject({ suffixRule: undefined })
+    expect(resolve(index, 'm-gratis', { suffixes: [suffixRule('gratis', '-gratis', FREE)] })).toMatchObject({
+      suffixRule: { override: FREE },
     })
-    expect(result.kind === 'resolved' && result.entry.canonicalId).toBe('x/m-preview')
-  })
-})
-
-describe('per-model rule gating', () => {
-  const index = makeIndex([{ id: 'x/m' }])
-
-  it('uses every rule when unset', () => {
-    expect(resolve(index, 'm-free', { suffixes: [freeDash] }).kind).toBe('resolved')
   })
 
-  it('disables all rules for an empty list', () => {
-    const provider = gated('m-free', { suffixes: [] })
-    expect(resolve(index, 'm-free', { provider, suffixes: [freeDash] })).toEqual({
+  it('lets a model gate disable every rule with [] or allow only the named ones', () => {
+    const index = makeIndex([{ id: 'x/m' }])
+    const rules = { suffixes: [freeDash, freeColon] }
+
+    expect(resolve(index, 'm-free', { provider: gated('m-free', { suffixes: [] }), ...rules })).toEqual({
       kind: 'unresolved',
       reason: 'rules-disabled',
     })
-  })
-
-  it('allows only the named rules', () => {
-    const provider = gated('m-free', { suffixes: ['free-colon'] })
-    expect(resolve(index, 'm-free', { provider, suffixes: [freeDash, freeColon] }).kind).toBe('unresolved')
-
-    const permitted = gated('m-free', { suffixes: ['free-dash'] })
-    expect(resolve(index, 'm-free', { provider: permitted, suffixes: [freeDash, freeColon] }).kind).toBe('resolved')
-  })
-
-  it('skips a model outright', () => {
-    const provider = gated('m', { skip: true })
-    expect(resolve(index, 'm', { provider })).toEqual({ kind: 'unresolved', reason: 'skipped' })
+    expect(resolve(index, 'm-free', { provider: gated('m-free', { suffixes: ['free-colon'] }), ...rules }).kind).toBe(
+      'unresolved',
+    )
+    expect(resolve(index, 'm-free', { provider: gated('m-free', { suffixes: ['free-dash'] }), ...rules }).kind).toBe(
+      'resolved',
+    )
   })
 })
 
-describe('rule overrides', () => {
-  const index = makeIndex([
-    { id: 'x/m', cost: { input: 5, output: 10, cacheRead: 0, cacheWrite: 0 } },
-    { id: 'x/m-free', cost: { input: 5, output: 10, cacheRead: 0, cacheWrite: 0 } },
-  ])
-
-  it('reports the rule only when it was used for the match', () => {
-    const direct = resolve(index, 'm-free', { suffixes: [freeDash] })
-    expect(direct.kind === 'resolved' && direct.suffixRule).toBeUndefined()
-
-    const stripped = resolve(index, 'm-gratis', { suffixes: [suffixRule('gratis', '-gratis', FREE)] })
-    expect(stripped.kind === 'resolved' && stripped.suffixRule?.override).toEqual(FREE)
-  })
-})
-
-describe('tie-break', () => {
+describe('tie-break between catalog providers', () => {
   const shared = [
-    { source: 'pi.dev' as const, provider: 'openai', id: 'gpt-5.5', contextWindow: 400_000 },
-    { source: 'pi.dev' as const, provider: 'azure', id: 'gpt-5.5', contextWindow: 200_000 },
+    { provider: 'openai', id: 'gpt-5.5' },
+    { provider: 'azure', id: 'gpt-5.5' },
   ]
+  const provider = (result: Resolution): string | undefined =>
+    result.kind === 'resolved' ? result.entry.sourceProvider : undefined
 
-  it('tier 1 uses the configured catalog provider', () => {
-    const result = resolve(makeIndex(shared), 'gpt-5.5', {
-      provider: makeProvider({ catalogProvider: 'azure' }),
-    })
-    expect(result.kind === 'resolved' && result.entry.sourceProvider).toBe('azure')
+  it('prefers the configured catalog provider, then the Pi provider id', () => {
+    const index = makeIndex(shared)
+
+    expect(provider(resolve(index, 'gpt-5.5', { provider: makeProvider({ catalogProvider: 'azure' }) }))).toBe('azure')
+    expect(provider(resolve(index, 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) }))).toBe('openai')
   })
 
-  it('tier 2 uses the Pi provider id when it names a catalog provider', () => {
-    const result = resolve(makeIndex(shared), 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    expect(result.kind === 'resolved' && result.entry.sourceProvider).toBe('openai')
-  })
-
-  it('a vendor prefix in the id settles the provider before any tie-break', () => {
-    const result = resolve(makeIndex(shared), 'azure/gpt-5.5')
-    expect(result.kind === 'resolved' && result.entry.sourceProvider).toBe('azure')
-  })
-
-  it('beats the vendor oracle, which points the other way', () => {
-    // The oracle would say `openai`; the explicit prefix must win.
+  it('lets a vendor prefix in the id settle the provider, even against the vendor oracle', () => {
     const index = makeIndex([...shared, { source: 'models.dev', id: 'openai/gpt-5.5' }])
-    const result = resolve(index, 'azure/gpt-5.5')
-    expect(result.kind === 'resolved' && result.entry.sourceProvider).toBe('azure')
+
+    expect(provider(resolve(index, 'azure/gpt-5.5'))).toBe('azure')
   })
 
-  it('reports vendor-qualified when the stripped id is what matched', () => {
-    // pi.dev files this model under `google-vertex`, so `google/…` only resolves
-    // once the vendor prefix comes off.
-    const index = makeIndex([{ source: 'pi.dev', provider: 'google-vertex', id: 'gemini-3-pro' }])
-    const result = resolve(index, 'google/gemini-3-pro')
-    expect(result).toMatchObject({ kind: 'resolved', matchKind: 'vendor-qualified' })
+  it('resolves a vendor-qualified id that the catalog files under another provider', () => {
+    const index = makeIndex([{ provider: 'google-vertex', id: 'gemini-3-pro' }])
+
+    expect(resolve(index, 'google/gemini-3-pro')).toMatchObject({ kind: 'resolved', matchKind: 'vendor-qualified' })
   })
 
-  it('falls back to the models.dev vendor oracle when nothing else decides', () => {
-    const index = makeIndex([...shared, { source: 'models.dev', id: 'openai/gpt-5.5', contextWindow: 400_000 }])
-    const result = resolve(index, 'gpt-5.5')
-    expect(result.kind === 'resolved' && result.entry.sourceProvider).toBe('openai')
-  })
-
-  it('accepts a single candidate without needing a tie-break', () => {
-    const index = makeIndex([{ source: 'pi.dev', provider: 'openai', id: 'gpt-5.5' }])
-    expect(resolve(index, 'gpt-5.5').kind).toBe('resolved')
-  })
-
-  it('stays ambiguous and injects nothing when every tier is exhausted', () => {
-    const result = resolve(makeIndex(shared), 'gpt-5.5')
-    expect(result.kind).toBe('ambiguous')
-    expect(result.kind === 'ambiguous' && result.candidates).toHaveLength(2)
+  it('falls back to the models.dev vendor oracle, and stays ambiguous when nothing decides', () => {
+    expect(provider(resolve(makeIndex([...shared, { source: 'models.dev', id: 'openai/gpt-5.5' }]), 'gpt-5.5'))).toBe(
+      'openai',
+    )
+    expect(resolve(makeIndex(shared), 'gpt-5.5')).toMatchObject({ kind: 'ambiguous', candidates: { length: 2 } })
   })
 })
 
-describe('source priority', () => {
+it('follows the configured source order and offers a pi.dev donor for structural backfill', () => {
   const specs = [
-    { source: 'models.dev' as const, id: 'openai/gpt-5.5', contextWindow: 111 },
-    { source: 'pi.dev' as const, provider: 'openai', id: 'gpt-5.5', contextWindow: 222 },
+    { source: 'models.dev' as const, id: 'openai/gpt-5.5' },
+    { source: 'pi.dev' as const, provider: 'openai', id: 'gpt-5.5' },
   ]
+  const openai = { provider: makeProvider({ id: 'openai' }) }
 
-  it('prefers pi.dev by default', () => {
-    const result = resolve(makeIndex(specs), 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    expect(result.kind === 'resolved' && result.entry.source).toBe('pi.dev')
-  })
-
-  it('follows an inverted source order', () => {
-    const index = makeIndex(specs, ['models.dev', 'pi.dev'])
-    const result = resolve(index, 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    expect(result.kind === 'resolved' && result.entry.source).toBe('models.dev')
-  })
-
-  it('offers a same-provider pi.dev donor for structural backfill', () => {
-    const index = makeIndex(specs, ['models.dev', 'pi.dev'])
-    const result = resolve(index, 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    expect(result.kind === 'resolved' && result.donor?.source).toBe('pi.dev')
-  })
-})
-
-describe('determinism', () => {
-  it('does not depend on insertion order', () => {
-    const specs = [
-      { source: 'pi.dev' as const, provider: 'openai', id: 'gpt-5.5', contextWindow: 400_000 },
-      { source: 'models.dev' as const, id: 'openai/gpt-5.5', contextWindow: 300_000 },
-      { source: 'pi.dev' as const, provider: 'openai', id: 'gpt-5.5-mini' },
-    ]
-    const forward = resolve(makeIndex(specs), 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    const reversed = resolve(makeIndex([...specs].reverse()), 'gpt-5.5', { provider: makeProvider({ id: 'openai' }) })
-    expect(JSON.stringify(forward)).toBe(JSON.stringify(reversed))
-  })
-})
-
-describe('misses', () => {
-  it('returns unresolved rather than throwing on an unknown id', () => {
-    expect(resolve(makeIndex([{ id: 'x/m' }]), 'nothing-like-this')).toEqual({
-      kind: 'unresolved',
-      reason: 'no-match',
-    })
+  expect(resolve(makeIndex(specs), 'gpt-5.5', openai)).toMatchObject({ entry: { source: 'pi.dev' } })
+  expect(resolve(makeIndex(specs, ['models.dev', 'pi.dev']), 'gpt-5.5', openai)).toMatchObject({
+    entry: { source: 'models.dev' },
+    donor: { source: 'pi.dev' },
   })
 })

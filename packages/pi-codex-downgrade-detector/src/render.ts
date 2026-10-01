@@ -1,11 +1,9 @@
+import type { ConfigPaths, DetectorConfig } from './config.js'
 import type { TurnObservation } from './observe.js'
 import type { Direction, Finding, FindingLevel, Verdict } from './verdict.js'
-import type { ThemeColor } from '@earendil-works/pi-coding-agent'
+import type { Theme, ThemeColor } from '@earendil-works/pi-coding-agent'
 
-/** The slice of Pi's `Theme` the footer needs; `ctx.ui.theme` satisfies it. */
-export interface StatusTheme {
-  fg: (color: ThemeColor, text: string) => string
-}
+type StatusTheme = Pick<Theme, 'fg'>
 
 const LABEL = 'codex'
 const LEVEL_COLORS: Record<FindingLevel, ThemeColor> = {
@@ -40,11 +38,8 @@ function modelText(verdict: Verdict): string {
   return `${requestedModel}${verdict.direction === 'lateral' ? '≠' : '→'}${servedModel}`
 }
 
-/** The slugs, plus only those fragments an arrow between slugs cannot express. */
 function bodyText(verdict: Verdict, findings: readonly Finding[]): string {
-  const notes = findings.flatMap(finding => (finding.note === undefined ? [] : [finding.note]))
-
-  return [modelText(verdict), ...notes].join(' · ')
+  return [modelText(verdict), ...findings.flatMap(finding => finding.note ?? [])].join(' · ')
 }
 
 function describeSource(turn: TurnObservation): string {
@@ -58,23 +53,15 @@ function describeSource(turn: TurnObservation): string {
   return turn.sawRoutingHeaders ? 'routing headers, but none named a model' : 'no served-model signal'
 }
 
-/**
- * The footer token. Every extension's status shares one hard-truncated line, so this stays one
- * glyph wide and leaves the slugs to the widget.
- */
+/** Every extension's status shares one hard-truncated footer line, so this stays one glyph wide. */
 export function renderStatus(verdict: Verdict, theme: StatusTheme): string {
   return `${theme.fg(LEVEL_COLORS[verdict.level], glyphFor(verdict))} ${theme.fg('dim', LABEL)}`
 }
 
-/** Loaded and listening, but no turn has finished yet — which is not the same as absent. */
 export function renderWaitingStatus(theme: StatusTheme): string {
   return `${theme.fg('dim', '·')} ${theme.fg('dim', LABEL)}`
 }
 
-/**
- * The widget row, shown only when a turn diverged. The two slugs carry the verdict on their own,
- * so the only extra fragments are the ones an arrow between slugs cannot express.
- */
 export function renderDetail(verdict: Verdict, theme: StatusTheme): string[] | undefined {
   const notable = verdict.findings.filter(finding => finding.level === 'warn' || finding.level === 'critical')
   if (verdict.outcome === 'unverified' || notable.length === 0) {
@@ -92,12 +79,10 @@ export function renderDetail(verdict: Verdict, theme: StatusTheme): string[] | u
   ]
 }
 
-/** One line for the notification that fires the first time a pair is substituted. */
 export function renderAlert(verdict: Verdict): string {
   return `${LABEL}-downgrade: ${bodyText(verdict, verdict.findings)}`
 }
 
-/** The `/codex-downgrade` body. Absence of evidence is printed as absence of evidence. */
 export function renderReport(verdicts: readonly Verdict[]): string {
   if (verdicts.length === 0) {
     return 'No provider responses observed yet in this session.'
@@ -113,4 +98,18 @@ export function renderReport(verdicts: readonly Verdict[]): string {
   }
 
   return lines.join('\n')
+}
+
+export function renderConfig(config: DetectorConfig, paths: ConfigPaths): string {
+  const tiers = Object.entries(config.tiers)
+
+  return [
+    `providers   : ${config.providers.length > 0 ? config.providers.join(', ') : '(every provider)'}`,
+    `checkEffort : ${config.checkEffort}`,
+    `notify      : ${config.notify}`,
+    `tiers       : ${tiers.length > 0 ? tiers.map(([slug, rank]) => `${slug}=${rank}`).join(', ') : '(built-in only)'}`,
+    '',
+    `global  : ${paths.global}`,
+    `project : ${paths.project}`,
+  ].join('\n')
 }

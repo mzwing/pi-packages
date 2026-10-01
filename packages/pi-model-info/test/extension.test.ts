@@ -1,15 +1,9 @@
-import type { CatalogCacheFileSystem } from '../src/cache.js'
-import type { LoadConfigResult } from '../src/config.js'
-import type { CatalogFetcher, FetchOutcome } from '../src/fetcher.js'
-import type { UserAuthoredMap } from '../src/models-json.js'
-import type { ModelInfoConfig, SnapshotModel } from '../src/types.js'
+import type { SnapshotModel } from '../src/types.js'
 import type { ExtensionAPI, ModelRegistry } from '@earendil-works/pi-coding-agent'
-import { describe, expect, it, vi } from 'vitest'
-import { CatalogCache } from '../src/cache.js'
-import { CatalogStore } from '../src/catalog.js'
-import { createModelInfoExtension } from '../src/extension.js'
-import { ProviderApplier } from '../src/provider-apply.js'
-import { makeSnapshot } from './helpers.js'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import modelInfo from '../src/index.js'
+import { json, makeSnapshot, stubFetch, useWorkspace, writeFile } from './helpers.js'
 
 const PI_DEV_PAYLOAD = {
   openai: {
@@ -36,219 +30,6 @@ const PI_DEV_PAYLOAD = {
   },
 }
 
-interface NativeProvider {
-  id: string
-  getModels: () => SnapshotModel[]
-}
-
-interface Harness {
-  pi: ExtensionAPI
-  registrations: { id: string; config: Record<string, unknown> }[]
-  natives: NativeProvider[]
-  unregistered: string[]
-  commands: Map<
-    string,
-    { handler: (args: string, ctx: unknown) => Promise<void>; getArgumentCompletions?: (prefix: string) => unknown }
-  >
-  emit: (event: string, context: unknown) => void
-}
-
-function createPiHarness(): Harness {
-  const handlers = new Map<string, ((event: unknown, context: unknown) => void)[]>()
-  const registrations: Harness['registrations'] = []
-  const natives: NativeProvider[] = []
-  const unregistered: string[] = []
-  const commands: Harness['commands'] = new Map()
-
-  const pi = {
-    on(event: string, handler: (event: unknown, context: unknown) => void) {
-      const bucket = handlers.get(event) ?? []
-      bucket.push(handler)
-      handlers.set(event, bucket)
-    },
-    registerProvider(idOrProvider: string | NativeProvider, config: Record<string, unknown>) {
-      if (typeof idOrProvider === 'string') {
-        registrations.push({ id: idOrProvider, config })
-      } else {
-        natives.push(idOrProvider)
-      }
-    },
-    unregisterProvider(id: string) {
-      unregistered.push(id)
-    },
-    registerCommand(name: string, options: Harness['commands'] extends Map<string, infer V> ? V : never) {
-      commands.set(name, options)
-    },
-    events: { on: () => () => {}, emit: () => {} },
-  }
-
-  return {
-    pi: pi as unknown as ExtensionAPI,
-    registrations,
-    natives,
-    unregistered,
-    commands,
-    emit(event, context) {
-      for (const handler of handlers.get(event) ?? []) {
-        handler({}, context)
-      }
-    },
-  }
-}
-
-interface RegistryOptions {
-  models?: SnapshotModel[]
-  /** Image and classifier models, listed only through `getAllModels`. */
-  others?: unknown[]
-  registeredConfig?: Record<string, unknown> | undefined
-  nativeProvider?: unknown
-  dynamic?: boolean
-  missing?: boolean
-}
-
-interface RegistryState {
-  models: SnapshotModel[]
-  /** What `getRegisteredNativeProvider` reports; a test sets it to replay a `/reload`. */
-  native: unknown
-}
-
-function createRegistry(options: RegistryOptions = {}): ModelRegistry & RegistryState {
-  // One stable object, as Pi has: a wrapper must be able to read the list underneath it later.
-  const state = {
-    models: options.models ?? [makeSnapshot()],
-    native: options.nativeProvider,
-    provider: {
-      id: 'relay',
-      getModels: () => state.models,
-      ...(options.others === undefined ? {} : { getAllModels: () => [...state.models, ...(options.others ?? [])] }),
-      ...(options.dynamic === true ? { refreshModels: async () => {} } : {}),
-    },
-    getProvider: (_id: string) => (options.missing === true ? undefined : state.provider),
-    getRegisteredProviderConfig: () => options.registeredConfig,
-    getRegisteredNativeProvider: () => state.native,
-    find: (_provider: string, modelId: string) => state.models.find(model => model.id === modelId),
-  }
-  return state as unknown as ModelRegistry & RegistryState
-}
-
-function memoryFs(): CatalogCacheFileSystem {
-  const files = new Map<string, string>()
-  return {
-    readFile: path => files.get(path),
-    writeFile: (path, data) => {
-      files.set(path, data)
-    },
-    rename: (from, to) => {
-      const data = files.get(from)
-      files.delete(from)
-      if (data !== undefined) {
-        files.set(to, data)
-      }
-    },
-    mkdir: () => {},
-    unlink: path => {
-      files.delete(path)
-    },
-  }
-}
-
-function okFetcher(): CatalogFetcher {
-  return {
-    get: async (request): Promise<FetchOutcome> =>
-      request.url.includes('pi.dev')
-        ? { status: 'ok', body: PI_DEV_PAYLOAD, etag: undefined, lastModified: undefined }
-        : { status: 'ok', body: {}, etag: undefined, lastModified: undefined },
-  }
-}
-
-interface SetupOptions {
-  config?: ModelInfoConfig
-  registry?: ModelRegistry
-  fetcher?: CatalogFetcher
-  isIdle?: boolean
-  /** What models.json defines, which decides whether a provider can be completed lazily. */
-  authored?: UserAuthoredMap
-}
-
-function setup(options: SetupOptions = {}) {
-  const harness = createPiHarness()
-  const tasks: (() => void)[] = []
-  const warnings: string[] = []
-  const fs = memoryFs()
-  const registry = options.registry ?? createRegistry()
-
-  const loadConfig = vi.fn<(cwd: string, agentDir: string) => LoadConfigResult>(() => ({
-    config: options.config ?? { providers: { relay: {} } },
-    issues: [],
-    globalPath: '/agent/config.json',
-    projectPath: '/project/config.json',
-  }))
-  const readUserAuthored = vi.fn((): UserAuthoredMap => options.authored ?? new Map())
-
-  createModelInfoExtension(harness.pi, {
-    catalogStore: new CatalogStore({
-      cache: new CatalogCache({ dir: '/cache', fileSystem: fs }),
-      fetcher: options.fetcher ?? okFetcher(),
-      now: () => 1_000_000,
-      random: () => 0.5,
-    }),
-    applier: new ProviderApplier({ warn: message => warnings.push(message) }),
-    loadConfig,
-    readUserAuthored,
-    agentDir: '/agent',
-    schedule: task => tasks.push(task),
-    warn: message => warnings.push(message),
-  })
-
-  const context = { cwd: '/project', modelRegistry: registry, isIdle: () => options.isIdle ?? true }
-
-  return {
-    ...harness,
-    registry,
-    warnings,
-    tasks,
-    loadConfig,
-    readUserAuthored,
-    context,
-    start: () => harness.emit('session_start', context),
-    async flush() {
-      const pending = [...tasks]
-      tasks.length = 0
-      for (const task of pending) {
-        task()
-      }
-      await new Promise(resolve => setImmediate(resolve))
-    },
-  }
-}
-
-describe('factory', () => {
-  it('registers handlers and the command without doing any I/O', () => {
-    const failingFs: CatalogCacheFileSystem = {
-      readFile: () => {
-        throw new Error('the factory must not touch the disk')
-      },
-      writeFile: () => {
-        throw new Error('the factory must not touch the disk')
-      },
-      rename: () => {},
-      mkdir: () => {},
-      unlink: () => {},
-    }
-    const harness = createPiHarness()
-    expect(() =>
-      createModelInfoExtension(harness.pi, {
-        catalogStore: new CatalogStore({ cache: new CatalogCache({ dir: '/c', fileSystem: failingFs }) }),
-        loadConfig: () => {
-          throw new Error('the factory must not read config')
-        },
-        schedule: () => {},
-      }),
-    ).not.toThrow()
-    expect(harness.commands.has('model-info')).toBe(true)
-  })
-})
-
 const IMAGE_MODEL = {
   id: 'gpt-5.5-mini',
   name: 'GPT-5.5 mini Image',
@@ -260,419 +41,411 @@ const IMAGE_MODEL = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 }
 
-describe('session start', () => {
-  it('returns before the catalog resolves, then registers once it does', async () => {
-    const harness = setup()
-    harness.start()
-    expect(harness.registrations).toHaveLength(0)
+type Handler = (event: unknown, context: unknown) => void
+type Refresh = (context: unknown) => Promise<SnapshotModel[]>
 
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(1)
-  })
+interface NativeProvider {
+  id: string
+  getModels: () => SnapshotModel[]
+}
 
-  it('does nothing when no provider is opted in', async () => {
-    const harness = setup({ config: { providers: {} } })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-  })
+interface RegistryOptions {
+  models?: SnapshotModel[]
+  /** Image and classifier models, listed only through `getAllModels`. */
+  others?: unknown[]
+  registeredConfig?: Record<string, unknown> | undefined
+  nativeProvider?: unknown
+  dynamic?: boolean
+}
 
-  it('skips a provider Pi does not have', async () => {
-    const harness = setup({ registry: createRegistry({ missing: true }) })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-    expect(harness.warnings.join('\n')).toContain('not present in Pi')
-  })
-
-  it('refuses a provider another extension registered natively', async () => {
-    // registerProvider deletes the native registration, so we would destroy it.
-    const harness = setup({ registry: createRegistry({ nativeProvider: { id: 'relay' } }) })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-    expect(harness.warnings.join('\n')).toContain('native provider')
-  })
-
-  it('skips a provider with no models to complete', async () => {
-    const harness = setup({ registry: createRegistry({ models: [] }) })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-    expect(harness.warnings.join('\n')).toContain('no models to complete')
-  })
-})
-
-describe('a provider that refreshes its own list', () => {
-  function dynamic(models: SnapshotModel[] = [makeSnapshot({ id: 'gpt-5.5' })]) {
-    return createRegistry({ dynamic: true, models })
+/** One stable provider object, as Pi has, so a wrapper can read the list underneath it later. */
+function createRegistry(options: RegistryOptions = {}) {
+  const state = {
+    models: options.models ?? [makeSnapshot()],
+    /** What `getRegisteredNativeProvider` reports; a test sets it to replay a `/reload`. */
+    native: options.nativeProvider,
+    registered: options.registeredConfig,
+    provider: {
+      id: 'relay',
+      getModels: () => state.models,
+      ...(options.others === undefined ? {} : { getAllModels: () => [...state.models, ...(options.others ?? [])] }),
+      ...(options.dynamic === true ? { refreshModels: async () => {} } : {}),
+    },
+    getProvider: () => state.provider,
+    getRegisteredProviderConfig: () => state.registered,
+    getRegisteredNativeProvider: () => state.native,
   }
 
-  it('registers a provider object instead of a replacement list', async () => {
-    const harness = setup({ registry: dynamic() })
-    harness.start()
-    await harness.flush()
+  return state
+}
 
-    expect(harness.registrations).toHaveLength(0)
-    expect(harness.natives).toHaveLength(1)
-    expect(harness.natives[0]?.getModels()[0]?.contextWindow).toBe(400_000)
-    expect(harness.warnings.join('\n')).not.toContain('freezes')
+/** Lets the scheduled catalog task run and its fetches settle. */
+async function settle(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
+  for (let turn = 0; turn < 20; turn += 1) {
+    await new Promise(resolve => setImmediate(resolve))
+  }
+}
+
+describe('model info extension', () => {
+  const workspace = useWorkspace()
+  const configPath = (): string => join(workspace.agentDir, 'extensions', 'pi-model-info', 'config.json')
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
-  // The whole point: no event, no re-registration, no next turn — the list is read late.
-  it('completes a model that appears after registration, on the next read', async () => {
-    const registry = dynamic()
-    const harness = setup({ registry })
-    harness.start()
-    await harness.flush()
+  interface SetupOptions {
+    config?: unknown
+    registry?: ReturnType<typeof createRegistry>
+    fetch?: (url: string) => Response | Promise<Response>
+    isIdle?: boolean
+    modelsJson?: unknown
+  }
 
-    registry.models = [...registry.models, makeSnapshot({ id: 'gpt-5.5-mini', contextWindow: 128_000 })]
-
-    const models = harness.natives[0]?.getModels() ?? []
-    expect(models.map(model => model.id)).toEqual(['gpt-5.5', 'gpt-5.5-mini'])
-    expect(models[1]?.contextWindow).toBe(200_000)
-    expect(harness.natives).toHaveLength(1)
-  })
-
-  it('leaves the list untouched until a catalog is loaded', async () => {
-    const failing: CatalogFetcher = {
-      get: async (): Promise<FetchOutcome> => ({ status: 'error', message: 'offline' }),
+  function setup(options: SetupOptions = {}) {
+    writeFile(configPath(), options.config ?? { providers: { relay: {} } })
+    if (options.modelsJson !== undefined) {
+      writeFile(join(workspace.agentDir, 'models.json'), options.modelsJson)
     }
-    const harness = setup({ registry: dynamic(), fetcher: failing })
-    harness.start()
-    await harness.flush()
+    const fetch = stubFetch(options.fetch ?? (url => json(url.includes('pi.dev') ? PI_DEV_PAYLOAD : {})))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect(harness.natives).toHaveLength(0)
-  })
+    const handlers = new Map<string, Handler[]>()
+    const registrations: { id: string; config: Record<string, unknown> }[] = []
+    const natives: NativeProvider[] = []
+    const unregistered: string[] = []
+    const pi = {
+      on(event: string, handler: Handler) {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler])
+      },
+      registerProvider(idOrProvider: string | NativeProvider, config: Record<string, unknown>) {
+        if (typeof idOrProvider === 'string') {
+          registrations.push({ id: idOrProvider, config })
+        } else {
+          natives.push(idOrProvider)
+        }
+      },
+      unregisterProvider(id: string) {
+        unregistered.push(id)
+      },
+      registerCommand() {},
+    }
+    modelInfo(pi as unknown as ExtensionAPI)
 
-  it('reuses its wrapper rather than stacking one across a reload', async () => {
-    const registry = dynamic()
-    const harness = setup({ registry })
-    harness.start()
-    await harness.flush()
+    const registry = options.registry ?? createRegistry()
+    const context = {
+      cwd: workspace.cwd,
+      modelRegistry: registry as unknown as ModelRegistry,
+      isIdle: () => options.isIdle ?? true,
+    }
+    const emit = (event: string): void => {
+      for (const handler of handlers.get(event) ?? []) {
+        handler({}, context)
+      }
+    }
 
-    // Pi keeps the native registration across a reload; a second pass must unwrap to the base.
-    registry.native = harness.natives[0]
-    harness.start()
-    await harness.flush()
-
-    expect(harness.natives).toHaveLength(2)
-    expect(harness.natives[1]).toBe(harness.natives[0])
-    expect(harness.natives[1]?.getModels()[0]?.contextWindow).toBe(400_000)
-  })
-
-  it('falls back to a replacement list when models.json defines the provider', async () => {
-    const harness = setup({
-      registry: dynamic(),
-      authored: new Map([['relay', new Map([['gpt-5.5', new Set<string>()]])]]),
-    })
-    harness.start()
-    await harness.flush()
-
-    expect(harness.natives).toHaveLength(0)
-    expect(harness.registrations).toHaveLength(1)
-    expect(harness.warnings.join('\n')).toContain('freezes')
-  })
-})
-
-describe('a sibling that refreshes its own list', () => {
-  const definition = {
-    id: 'gpt-5.5-mini',
-    name: 'gpt-5.5-mini',
-    reasoning: false,
-    input: ['text'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: 16_384,
-  }
-
-  function siblingConfig(): Record<string, unknown> {
     return {
-      api: 'openai-completions',
-      apiKey: '!cat /run/secret',
-      baseUrl: 'http://localhost:8317/v1',
-      models: [{ id: 'gpt-5.5' }],
-      refreshModels: async () => [{ ...definition }],
+      emit,
+      fetch,
+      natives,
+      pi,
+      registrations,
+      unregistered,
+      start: () => emit('session_start'),
+      warnings: () => warn.mock.calls.map(([message]) => String(message)).join('\n'),
+      registered: (index = 0) => registrations[index]?.config['models'] as SnapshotModel[],
     }
   }
 
-  type Refresh = (context: unknown) => Promise<SnapshotModel[]>
+  describe('session start', () => {
+    // Pi awaits `session_start`, so the catalog is fetched after it returns.
+    it('returns before the catalog resolves, then registers once it does', async () => {
+      const harness = setup()
+      harness.start()
+      expect(harness.registrations).toHaveLength(0)
 
-  it('sends its own refreshModels, and completes what the sibling returns', async () => {
-    const registered = siblingConfig()
-    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
-    harness.start()
-    await harness.flush()
+      await settle()
+      expect(harness.registrations).toHaveLength(1)
+    })
 
-    const config = harness.registrations[0]?.config ?? {}
-    expect(Object.keys(config)).toEqual(['models', 'refreshModels'])
+    it('does nothing until a provider is opted in', async () => {
+      const harness = setup({ config: { providers: {} } })
+      harness.start()
+      await settle()
 
-    const refreshed = await (config['refreshModels'] as Refresh)({})
-    expect(refreshed[0]?.contextWindow).toBe(200_000)
-    // The provider-level api and baseUrl fill in what the definition left out.
-    expect(refreshed[0]?.baseUrl).toBe('http://localhost:8317/v1')
+      expect(harness.fetch).not.toHaveBeenCalled()
+      expect(harness.registrations).toHaveLength(0)
+    })
+
+    it('stays inert when the config is invalid', async () => {
+      const harness = setup({ config: '{' })
+      harness.start()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(0)
+      expect(harness.warnings()).toContain('invalid JSON')
+    })
+
+    // registerProvider drops a native registration, so completing the provider would delete it.
+    it('refuses a provider another extension registered natively', async () => {
+      const harness = setup({ registry: createRegistry({ nativeProvider: { id: 'relay' } }) })
+      harness.start()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(0)
+      expect(harness.warnings()).toContain('native provider')
+    })
   })
 
-  it('keeps an image entry exactly as the sibling wrote it, even under a chat model id', async () => {
-    const registered = { ...siblingConfig(), refreshModels: async () => [{ ...definition }, IMAGE_MODEL] }
-    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
-    harness.start()
-    await harness.flush()
+  describe('a provider that refreshes its own list', () => {
+    const dynamic = (): ReturnType<typeof createRegistry> =>
+      createRegistry({ dynamic: true, models: [makeSnapshot({ id: 'gpt-5.5' })] })
 
-    const refreshed = await (harness.registrations[0]?.config['refreshModels'] as Refresh)({})
-    expect(refreshed[0]?.contextWindow).toBe(200_000)
-    expect(refreshed[1]).toBe(IMAGE_MODEL)
+    it('wraps the provider instead of registering a replacement list', async () => {
+      const harness = setup({ registry: dynamic() })
+      harness.start()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(0)
+      expect(harness.natives[0]?.getModels()[0]?.contextWindow).toBe(400_000)
+      expect(harness.warnings()).not.toContain('freezes')
+    })
+
+    // No event, no re-registration, no next turn: the list is read late.
+    it('completes a model that appears later, on the next read', async () => {
+      const registry = dynamic()
+      const harness = setup({ registry })
+      harness.start()
+      await settle()
+      registry.models = [...registry.models, makeSnapshot({ id: 'gpt-5.5-mini' })]
+
+      expect(harness.natives[0]?.getModels().map(model => model.contextWindow)).toEqual([400_000, 200_000])
+      expect(harness.natives).toHaveLength(1)
+    })
+
+    // Pi keeps the native registration across a reload, so a second pass has to unwrap to the base.
+    it('reuses its wrapper rather than stacking one across a reload', async () => {
+      const registry = dynamic()
+      const harness = setup({ registry })
+      harness.start()
+      await settle()
+
+      registry.native = harness.natives[0]
+      harness.start()
+      await settle()
+
+      expect(harness.natives[1]).toBe(harness.natives[0])
+      expect(harness.natives[1]?.getModels()[0]?.contextWindow).toBe(400_000)
+    })
+
+    // Pi rebuilds a models.json list above anything registered underneath, so a wrapper would not survive.
+    it('falls back to a replacement list, and warns that it freezes, when models.json defines the provider', async () => {
+      const harness = setup({
+        registry: dynamic(),
+        modelsJson: { providers: { relay: { models: [{ id: 'gpt-5.5' }] } } },
+      })
+      harness.start()
+      await settle()
+
+      expect(harness.natives).toHaveLength(0)
+      expect(harness.registrations).toHaveLength(1)
+      expect(harness.warnings()).toContain('freezes')
+    })
   })
 
-  it('does not stack a decorator on a decorator across a reload', async () => {
-    let calls = 0
-    const registered = {
-      ...siblingConfig(),
-      refreshModels: async () => {
+  describe('a sibling that refreshes its own list', () => {
+    const definition = {
+      id: 'gpt-5.5-mini',
+      name: 'gpt-5.5-mini',
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128_000,
+      maxTokens: 16_384,
+    }
+
+    function siblingConfig(refreshModels = async (): Promise<unknown[]> => [{ ...definition }]) {
+      return {
+        api: 'openai-completions',
+        apiKey: '!cat /run/secret',
+        baseUrl: 'http://localhost:8317/v1',
+        models: [{ id: 'gpt-5.5' }],
+        refreshModels,
+      }
+    }
+
+    it("hands Pi its own refreshModels, which completes what the sibling's returns", async () => {
+      const harness = setup({ registry: createRegistry({ registeredConfig: siblingConfig() }) })
+      harness.start()
+      await settle()
+
+      const config = harness.registrations[0]?.config ?? {}
+      expect(Object.keys(config)).toEqual(['models', 'refreshModels'])
+      // The provider-level api and baseUrl fill in what the definition left out.
+      expect((await (config['refreshModels'] as Refresh)({}))[0]).toMatchObject({
+        contextWindow: 200_000,
+        baseUrl: 'http://localhost:8317/v1',
+      })
+    })
+
+    it('keeps a non-chat entry exactly as the sibling wrote it, even under a chat model id', async () => {
+      const registered = siblingConfig(async () => [{ ...definition }, IMAGE_MODEL])
+      const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
+      harness.start()
+      await settle()
+
+      expect((await (harness.registrations[0]?.config['refreshModels'] as Refresh)({}))[1]).toBe(IMAGE_MODEL)
+    })
+
+    // Pi merges our keys into the sibling's entry, so the next session reads back our own hook.
+    it('does not stack a decorator on a decorator across a reload', async () => {
+      let calls = 0
+      const registered = siblingConfig(async () => {
         calls += 1
 
         return [{ ...definition }]
-      },
-    }
-    const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
-    harness.start()
-    await harness.flush()
+      })
+      const harness = setup({ registry: createRegistry({ registeredConfig: registered }) })
+      harness.start()
+      await settle()
 
-    // Pi merges our keys into the sibling's entry, so the next session reads back our own hook.
-    Object.assign(registered, harness.registrations[0]?.config)
-    harness.start()
-    await harness.flush()
+      Object.assign(registered, harness.registrations[0]?.config)
+      harness.start()
+      await settle()
+      await (harness.registrations[1]?.config['refreshModels'] as Refresh)({})
 
-    const refreshed = await (harness.registrations[1]?.config['refreshModels'] as Refresh)({})
-    expect(calls).toBe(1)
-    expect(refreshed[0]?.contextWindow).toBe(200_000)
-  })
-})
-
-describe('registration shape', () => {
-  it('sends exactly one key, and every snapshot model', async () => {
-    const models = [makeSnapshot({ id: 'gpt-5.5' }), makeSnapshot({ id: 'mystery-model' })]
-    const harness = setup({ registry: createRegistry({ models }) })
-    harness.start()
-    await harness.flush()
-
-    const [registration] = harness.registrations
-    expect(Object.keys(registration?.config ?? {})).toEqual(['models'])
-
-    const registered = registration?.config['models'] as SnapshotModel[]
-    expect(registered.map(model => model.id).sort()).toEqual(['gpt-5.5', 'mystery-model'])
-  })
-
-  it('completes what it resolved and copies the rest verbatim', async () => {
-    const models = [makeSnapshot({ id: 'gpt-5.5' }), makeSnapshot({ id: 'mystery-model', contextWindow: 4_096 })]
-    const harness = setup({ registry: createRegistry({ models }) })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered.find(model => model.id === 'gpt-5.5')?.contextWindow).toBe(400_000)
-    expect(registered.find(model => model.id === 'mystery-model')?.contextWindow).toBe(4_096)
-  })
-
-  // A registered list replaces every model type, so one without these would delete them.
-  it('carries image and classifier models through untouched', async () => {
-    const harness = setup({ registry: createRegistry({ others: [IMAGE_MODEL] }) })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as unknown[]
-    expect(registered).toHaveLength(2)
-    expect(registered).toContain(IMAGE_MODEL)
-
-    harness.emit('before_agent_start', harness.context)
-    expect(harness.registrations).toHaveLength(1)
-  })
-
-  it('leaves virtual models to Pi, which layers them over whatever is registered', async () => {
-    const virtual = makeSnapshot({ id: 'auto', api: 'pi-virtual', baseUrl: '' })
-    const harness = setup({ registry: createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' }), virtual] }) })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered.map(model => model.id)).toEqual(['gpt-5.5'])
-
-    harness.emit('before_agent_start', harness.context)
-    expect(harness.registrations).toHaveLength(1)
-  })
-
-  it('pins api and baseUrl from the snapshot', async () => {
-    const harness = setup()
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered[0]?.api).toBe('openai-completions')
-    expect(registered[0]?.baseUrl).toBe('http://localhost:8317/v1')
-  })
-
-  it('carries headers, compat, samplingParams, promptCache and inputLimits through', async () => {
-    const model = makeSnapshot({
-      headers: { 'x-relay': '1' },
-      samplingParams: { top_p: 0.9 },
-      compat: { supportsStrictMode: true } as never,
-      promptCache: { short: 300 },
-      inputLimits: { images: { maxPerMessage: 4 } },
-    })
-    const harness = setup({ registry: createRegistry({ models: [model] }) })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered[0]?.headers).toEqual({ 'x-relay': '1' })
-    expect(registered[0]?.samplingParams).toEqual({ top_p: 0.9 })
-    expect(registered[0]?.promptCache).toEqual({ short: 300 })
-    expect(registered[0]?.inputLimits).toEqual({ images: { maxPerMessage: 4 } })
-  })
-})
-
-describe('cohabitation with a discovery extension', () => {
-  // pi-openai-api-models-sync registers `{ ...provider, models }`, so its entry holds
-  // the relay's credentials. Taking any of that away breaks authentication.
-  const siblingConfig = {
-    api: 'openai-completions',
-    apiKey: '!cat /run/secret',
-    authHeader: true,
-    baseUrl: 'http://localhost:8317/v1',
-    models: [{ id: 'gpt-5.5' }],
-  }
-
-  it('completes the models it discovered without touching its keys', async () => {
-    const harness = setup({
-      registry: createRegistry({
-        models: [makeSnapshot({ id: 'gpt-5.5' })],
-        registeredConfig: { ...siblingConfig },
-      }),
-    })
-    harness.start()
-    await harness.flush()
-
-    expect(Object.keys(harness.registrations[0]?.config ?? {})).toEqual(['models'])
-    expect(harness.unregistered).toEqual([])
-    expect(siblingConfig.apiKey).toBe('!cat /run/secret')
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered[0]?.contextWindow).toBe(400_000)
-  })
-
-  it('keeps the sibling values byte-for-byte when the catalogs cannot resolve a model', async () => {
-    const sibling = makeSnapshot({ id: 'house-model', contextWindow: 65_536, maxTokens: 8_192, reasoning: true })
-    const harness = setup({
-      registry: createRegistry({ models: [sibling], registeredConfig: { ...siblingConfig } }),
-    })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered[0]).toMatchObject({
-      contextWindow: 65_536,
-      maxTokens: 8_192,
-      reasoning: true,
-      cost: sibling.cost,
+      expect(calls).toBe(1)
     })
   })
 
-  it('defers to the sibling when the provider asks it to', async () => {
-    const harness = setup({
-      config: { providers: { relay: { contextWindowPolicy: 'keep' } } },
-      registry: createRegistry({ models: [makeSnapshot({ contextWindow: 65_536 })] }),
-    })
-    harness.start()
-    await harness.flush()
-
-    const registered = harness.registrations[0]?.config['models'] as SnapshotModel[]
-    expect(registered[0]?.contextWindow).toBe(65_536)
-  })
-
-  it('re-completes when a third party changes the list mid-session', async () => {
-    const registry = createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' })] })
-    const harness = setup({ registry })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(1)
-
-    registry.models = [...registry.models, makeSnapshot({ id: 'late-arrival' })]
-    harness.emit('before_agent_start', harness.context)
-
-    expect(harness.registrations).toHaveLength(2)
-    const registered = harness.registrations[1]?.config['models'] as SnapshotModel[]
-    expect(registered.map(model => model.id).sort()).toEqual(['gpt-5.5', 'late-arrival'])
-  })
-
-  it('does not re-register when nothing changed', async () => {
-    const harness = setup()
-    harness.start()
-    await harness.flush()
-    harness.emit('before_agent_start', harness.context)
-    expect(harness.registrations).toHaveLength(1)
-  })
-})
-
-describe('failure handling', () => {
-  it('survives a throwing registerProvider', async () => {
-    const harness = setup()
-    const pi = harness.pi as unknown as { registerProvider: () => void }
-    pi.registerProvider = () => {
-      throw new Error('nope')
-    }
-    harness.start()
-    await expect(harness.flush()).resolves.toBeUndefined()
-    expect(harness.warnings.join('\n')).toContain('nope')
-  })
-
-  it('registers nothing when no catalog is available', async () => {
-    const failing: CatalogFetcher = {
-      get: async (): Promise<FetchOutcome> => ({ status: 'error', message: 'offline' }),
-    }
-    const harness = setup({ fetcher: failing })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-  })
-})
-
-describe('applying on idle', () => {
-  it('defers a mid-turn swap to turn_end', async () => {
-    const harness = setup({
-      config: { providers: { relay: {} }, applyOnIdleOnly: true },
-      isIdle: false,
-    })
-    harness.start()
-    await harness.flush()
-    expect(harness.registrations).toHaveLength(0)
-
-    harness.emit('turn_end', harness.context)
-    expect(harness.registrations).toHaveLength(1)
-  })
-})
-
-describe('shutdown', () => {
-  it('aborts the in-flight refresh and registers nothing after it', async () => {
-    let resolveFetch: ((outcome: FetchOutcome) => void) | undefined
-    const slow: CatalogFetcher = {
-      get: async () =>
-        new Promise<FetchOutcome>(resolve => {
-          resolveFetch = resolve
+  describe('registration', () => {
+    // pi-openai-api-models-sync registers `{ ...provider, models }`, so the entry holds the relay's credentials.
+    it("sends only models, so a sibling's apiKey survives, and keeps an unresolved model byte for byte", async () => {
+      const unknown = makeSnapshot({ id: 'house-model', contextWindow: 65_536, maxTokens: 8_192, reasoning: true })
+      const harness = setup({
+        registry: createRegistry({
+          models: [makeSnapshot({ id: 'gpt-5.5' }), unknown],
+          registeredConfig: { api: 'openai-completions', apiKey: '!cat /run/secret', models: [{ id: 'gpt-5.5' }] },
         }),
-    }
-    const harness = setup({ fetcher: slow })
-    harness.start()
+      })
+      harness.start()
+      await settle()
 
-    const pending = [...harness.tasks]
-    harness.tasks.length = 0
-    for (const task of pending) {
-      task()
-    }
+      expect(Object.keys(harness.registrations[0]?.config ?? {})).toEqual(['models'])
+      expect(harness.registered()).toEqual([expect.objectContaining({ contextWindow: 400_000 }), unknown])
+    })
 
-    harness.emit('session_shutdown', harness.context)
-    resolveFetch?.({ status: 'ok', body: PI_DEV_PAYLOAD, etag: undefined, lastModified: undefined })
-    await new Promise(resolve => setImmediate(resolve))
+    // A registered list replaces every model type, while Pi layers virtual models back over any list.
+    it('carries image and classifier models through, and leaves virtual ones to Pi', async () => {
+      const virtual = makeSnapshot({ id: 'auto', api: 'pi-virtual', baseUrl: '' })
+      const harness = setup({
+        registry: createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' }), virtual], others: [IMAGE_MODEL] }),
+      })
+      harness.start()
+      await settle()
 
-    expect(harness.registrations).toHaveLength(0)
+      expect(harness.registered().map(model => model.id)).toEqual(['gpt-5.5', 'gpt-5.5-mini'])
+      expect(harness.registered()).toContain(IMAGE_MODEL)
+    })
+
+    // Pi falls back to `models[0]` and throws when it cannot resolve api or baseUrl, deleting the provider.
+    it('pins api and baseUrl, and carries the fields Pi reads from the model', async () => {
+      const model = makeSnapshot({
+        headers: { 'x-relay': '1' },
+        samplingParams: { top_p: 0.9 },
+        promptCache: { short: 300 },
+        inputLimits: { images: { maxPerMessage: 4 } },
+      })
+      const harness = setup({ registry: createRegistry({ models: [model] }) })
+      harness.start()
+      await settle()
+
+      expect(harness.registered()[0]).toMatchObject({
+        api: model.api,
+        baseUrl: model.baseUrl,
+        headers: model.headers,
+        samplingParams: model.samplingParams,
+        promptCache: model.promptCache,
+        inputLimits: model.inputLimits,
+      })
+    })
+
+    it('re-registers only once another extension has changed the list', async () => {
+      const registry = createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' })] })
+      const harness = setup({ registry })
+      harness.start()
+      await settle()
+      harness.emit('before_agent_start')
+      expect(harness.registrations).toHaveLength(1)
+
+      registry.models = [...registry.models, makeSnapshot({ id: 'late-arrival' })]
+      harness.emit('before_agent_start')
+      expect(harness.registered(1).map(model => model.id)).toEqual(['gpt-5.5', 'late-arrival'])
+    })
+
+    it('releases its registration once the provider is no longer opted in', async () => {
+      const registry = createRegistry()
+      const harness = setup({ registry })
+      harness.start()
+      await settle()
+      registry.registered = harness.registrations[0]?.config
+
+      writeFile(configPath(), { providers: {} })
+      harness.start()
+
+      expect(harness.unregistered).toEqual(['relay'])
+    })
+  })
+
+  describe('failures and timing', () => {
+    it('survives Pi refusing a registration', async () => {
+      const harness = setup()
+      harness.pi.registerProvider = () => {
+        throw new Error('nope')
+      }
+      harness.start()
+      await settle()
+
+      expect(harness.warnings()).toContain("failed to complete provider 'relay': nope")
+    })
+
+    it('registers nothing rather than a partial completion when no catalog is available', async () => {
+      const harness = setup({ fetch: () => new Response('', { status: 503 }) })
+      harness.start()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(0)
+    })
+
+    // A contextWindow changing mid-turn can flip a compaction decision.
+    it('defers a mid-turn swap to turn_end', async () => {
+      const harness = setup({ config: { providers: { relay: {} }, applyOnIdleOnly: true }, isIdle: false })
+      harness.start()
+      await settle()
+      expect(harness.registrations).toHaveLength(0)
+
+      harness.emit('turn_end')
+      expect(harness.registrations).toHaveLength(1)
+    })
+
+    it('aborts the in-flight refresh on shutdown and registers nothing after it', async () => {
+      let release: (() => void) | undefined
+      const harness = setup({
+        fetch: async url =>
+          new Promise(resolve => {
+            release = () => resolve(json(url.includes('pi.dev') ? PI_DEV_PAYLOAD : {}))
+          }),
+      })
+      harness.start()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      harness.emit('session_shutdown')
+      release?.()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(0)
+    })
   })
 })

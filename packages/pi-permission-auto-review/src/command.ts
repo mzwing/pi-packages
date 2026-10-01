@@ -1,389 +1,311 @@
-import type { AutoReviewConfigStore, AutoReviewConfigScope } from './config-store.js'
-import type { AutoReviewConfig, AutoReviewConfigFile, LoadConfigResult } from './config.js'
+import type { ConfigScope, LoadConfigResult } from './config-store.js'
+import type { AutoReviewConfig, AutoReviewConfigFile } from './config.js'
 import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
-import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS } from './config.js'
+import { configPath, loadConfig, readScope, resetScope, saveScope } from './config-store.js'
+import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, MAX_TIMEOUT_MS, REASONING_LEVELS } from './config.js'
 
 const COMMAND_NAME = 'permission-auto-review'
-const USAGE = 'Usage: /permission-auto-review [show|path|reset [global|project]|help]'
+const USAGE = `Usage: /${COMMAND_NAME} [show|path|reset [global|project]|help]`
 const INHERIT = 'Use inherited value'
 const CUSTOM = 'Enter custom value...'
+const VALUE_PREFIX = 'Value: '
 const SAVE = 'Save changes'
 const CANCEL = 'Cancel'
 const WHITESPACE = /\s+/
 
-/** Every editable config key, so a new one cannot be added without a menu entry. */
 type ConfigField = Exclude<keyof AutoReviewConfig, '$schema'>
 
-interface FieldSpec {
-  label: string
-  format?: (value: unknown) => string
-  edit: (
-    ctx: ExtensionCommandContext,
-    draft: AutoReviewConfigFile,
-    effective: AutoReviewConfig,
-  ) => Promise<AutoReviewConfigFile>
-}
+type Layers = Record<ConfigScope, AutoReviewConfigFile>
 
-export type AutoReviewActivationResult = { kind: 'active' } | { kind: 'pending' } | { kind: 'failed'; message: string }
+type Editor = (
+  ctx: ExtensionCommandContext,
+  draft: AutoReviewConfigFile,
+  effective: AutoReviewConfig,
+) => Promise<AutoReviewConfigFile>
+
+export type ActivationResult = { kind: 'active' } | { kind: 'pending' } | { kind: 'failed'; message: string }
 
 export interface AutoReviewCommandController {
-  configStore: AutoReviewConfigStore
   getActiveConfig: () => AutoReviewConfig | undefined
-  applyConfig: (result: LoadConfigResult) => AutoReviewActivationResult
+  applyConfig: (result: LoadConfigResult) => ActivationResult
 }
 
-interface ConfigLayers {
-  global: AutoReviewConfigFile
-  project: AutoReviewConfigFile
-}
-
-function resolveOrigin(layers: ConfigLayers, field: ConfigField): AutoReviewConfigScope | 'default' {
-  if (Object.hasOwn(layers.project, field)) {
-    return 'project'
-  }
-  if (Object.hasOwn(layers.global, field)) {
-    return 'global'
-  }
-  return 'default'
-}
-
-function removeField(config: AutoReviewConfigFile, field: ConfigField): AutoReviewConfigFile {
-  const next = { ...config }
-  delete next[field]
-  return next
-}
-
-function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values)].toSorted((left, right) => left.localeCompare(right))
-}
-
-async function chooseStringValue(
-  ctx: ExtensionCommandContext,
-  title: string,
-  knownValues: string[],
-  currentValue: string,
-): Promise<{ kind: 'inherit' } | { kind: 'value'; value: string } | undefined> {
-  const values = uniqueSorted([...knownValues, currentValue])
-  const valueOptions = values.map(value => `Value: ${value}`)
-  const selected = await ctx.ui.select(title, [INHERIT, ...valueOptions, CUSTOM])
-  if (selected === undefined) {
-    return undefined
-  }
-  if (selected === INHERIT) {
-    return { kind: 'inherit' }
-  }
-  if (selected === CUSTOM) {
-    const custom = await ctx.ui.input(title, currentValue)
-    const normalized = custom?.trim()
-    if (normalized === undefined || normalized.length === 0) {
-      return undefined
-    }
-    return { kind: 'value', value: normalized }
-  }
-  const index = valueOptions.indexOf(selected)
-  return index < 0 ? undefined : { kind: 'value', value: values[index] ?? currentValue }
-}
-
-async function editStringField(
-  ctx: ExtensionCommandContext,
+function withField<K extends ConfigField>(
   draft: AutoReviewConfigFile,
+  field: K,
+  value: AutoReviewConfig[K] | undefined,
+): AutoReviewConfigFile {
+  const { [field]: _removed, ...rest } = draft
+
+  return value === undefined ? rest : { ...draft, [field]: value }
+}
+
+function editString(
   field: 'provider' | 'model',
-  effective: AutoReviewConfig,
-): Promise<AutoReviewConfigFile> {
-  const registry = ctx.modelRegistry
-  const knownValues =
-    field === 'provider'
-      ? registry.getAll().map(model => model.provider)
-      : registry
-          .getAll()
-          .filter(model => model.provider === effective.provider)
-          .map(model => model.id)
-  if (field === 'provider') {
-    knownValues.push(DEFAULT_PROVIDER)
-  } else if (effective.provider === DEFAULT_PROVIDER) {
-    knownValues.push(DEFAULT_MODEL)
-  }
+  title: string,
+  known: (effective: AutoReviewConfig, ctx: ExtensionCommandContext) => string[],
+): Editor {
+  return async (ctx, draft, effective) => {
+    const current = effective[field]
+    const values = [...new Set([...known(effective, ctx), current])].toSorted((left, right) =>
+      left.localeCompare(right),
+    )
+    const selected = await ctx.ui.select(title, [INHERIT, ...values.map(value => `${VALUE_PREFIX}${value}`), CUSTOM])
+    if (selected === INHERIT) {
+      return withField(draft, field, undefined)
+    }
+    if (selected === CUSTOM) {
+      const custom = (await ctx.ui.input(title, current))?.trim()
 
-  const title = field === 'provider' ? 'Configure Provider' : 'Configure Model'
-  const selected = await chooseStringValue(ctx, title, knownValues, effective[field])
-  if (selected === undefined) {
-    return draft
+      return custom === undefined || custom === '' ? draft : withField(draft, field, custom)
+    }
+
+    return selected?.startsWith(VALUE_PREFIX) === true
+      ? withField(draft, field, selected.slice(VALUE_PREFIX.length))
+      : draft
   }
-  if (selected.kind === 'inherit') {
-    return removeField(draft, field)
-  }
-  return field === 'provider' ? { ...draft, provider: selected.value } : { ...draft, model: selected.value }
 }
 
-async function editReasoning(ctx: ExtensionCommandContext, draft: AutoReviewConfigFile): Promise<AutoReviewConfigFile> {
-  const selected = await ctx.ui.select('Configure Reasoning', [INHERIT, ...REASONING_LEVELS])
-  if (selected === INHERIT) {
-    return removeField(draft, 'reasoning')
-  }
-  const reasoning = REASONING_LEVELS.find(level => level === selected)
-  return reasoning === undefined ? draft : { ...draft, reasoning }
-}
-
-async function editTimeout(
-  ctx: ExtensionCommandContext,
-  draft: AutoReviewConfigFile,
-  currentValue: number,
-): Promise<AutoReviewConfigFile> {
-  const action = await ctx.ui.select('Configure Timeout', [INHERIT, 'Enter timeout...'])
-  if (action === INHERIT) {
-    return removeField(draft, 'timeoutMs')
-  }
-  if (action !== 'Enter timeout...') {
-    return draft
-  }
-
-  const source = await ctx.ui.input('Timeout in milliseconds', String(currentValue))
-  if (source === undefined) {
-    return draft
-  }
-  const timeoutMs = Number(source.trim())
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
-    ctx.ui.notify('timeoutMs must be an integer between 1 and 300000.', 'warning')
-    return draft
-  }
-  return { ...draft, timeoutMs }
-}
-
-async function editBaselinePolicy(
-  ctx: ExtensionCommandContext,
-  draft: AutoReviewConfigFile,
-): Promise<AutoReviewConfigFile> {
-  const selected = await ctx.ui.select('Configure Baseline Policy', [INHERIT, 'Enabled', 'Disabled'])
-  if (selected === INHERIT) {
-    return removeField(draft, 'includeBaselinePolicy')
-  }
-  if (selected === 'Enabled' || selected === 'Disabled') {
-    return { ...draft, includeBaselinePolicy: selected === 'Enabled' }
-  }
-  return draft
-}
-
-async function editAdditionalPolicy(
-  ctx: ExtensionCommandContext,
-  draft: AutoReviewConfigFile,
-  currentValue: string | undefined,
-): Promise<AutoReviewConfigFile> {
-  const selected = await ctx.ui.select('Configure Additional Policy', ['Edit policy...', INHERIT])
-  if (selected === INHERIT) {
-    return removeField(draft, 'additionalPolicy')
-  }
-  if (selected !== 'Edit policy...') {
-    return draft
-  }
-  const value = await ctx.ui.editor('Additional review policy', currentValue ?? '')
-  if (value === undefined) {
-    return draft
-  }
-  const additionalPolicy = value.trim()
-  return additionalPolicy.length === 0 ? removeField(draft, 'additionalPolicy') : { ...draft, additionalPolicy }
-}
-
-const fields: Record<ConfigField, FieldSpec> = {
+const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (value: unknown) => string }> = {
   provider: {
     label: 'Provider',
-    edit: async (ctx, draft, effective) => editStringField(ctx, draft, 'provider', effective),
+    edit: editString('provider', 'Configure Provider', (_effective, ctx) => [
+      ...ctx.modelRegistry.getAll().map(model => model.provider),
+      DEFAULT_PROVIDER,
+    ]),
   },
   model: {
     label: 'Model',
-    edit: async (ctx, draft, effective) => editStringField(ctx, draft, 'model', effective),
+    edit: editString('model', 'Configure Model', (effective, ctx) => [
+      ...ctx.modelRegistry
+        .getAll()
+        .filter(model => model.provider === effective.provider)
+        .map(model => model.id),
+      ...(effective.provider === DEFAULT_PROVIDER ? [DEFAULT_MODEL] : []),
+    ]),
   },
   reasoning: {
     label: 'Reasoning',
-    edit: async (ctx, draft) => editReasoning(ctx, draft),
+    edit: async (ctx, draft) => {
+      const selected = await ctx.ui.select('Configure Reasoning', [INHERIT, ...REASONING_LEVELS])
+      if (selected === INHERIT) {
+        return withField(draft, 'reasoning', undefined)
+      }
+      const reasoning = REASONING_LEVELS.find(level => level === selected)
+
+      return reasoning === undefined ? draft : withField(draft, 'reasoning', reasoning)
+    },
   },
   timeoutMs: {
     label: 'Timeout',
     format: value => (typeof value === 'number' ? `${value} ms` : String(value ?? 'not set')),
-    edit: async (ctx, draft, effective) => editTimeout(ctx, draft, effective.timeoutMs),
+    edit: async (ctx, draft, effective) => {
+      const action = await ctx.ui.select('Configure Timeout', [INHERIT, 'Enter timeout...'])
+      if (action === INHERIT) {
+        return withField(draft, 'timeoutMs', undefined)
+      }
+      const source =
+        action === undefined ? undefined : await ctx.ui.input('Timeout in milliseconds', String(effective.timeoutMs))
+      if (source === undefined) {
+        return draft
+      }
+      const timeoutMs = Number(source.trim())
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
+        ctx.ui.notify(`timeoutMs must be an integer between 1 and ${MAX_TIMEOUT_MS}.`, 'warning')
+
+        return draft
+      }
+
+      return withField(draft, 'timeoutMs', timeoutMs)
+    },
   },
   includeBaselinePolicy: {
     label: 'Baseline policy',
-    edit: async (ctx, draft) => editBaselinePolicy(ctx, draft),
+    edit: async (ctx, draft) => {
+      const selected = await ctx.ui.select('Configure Baseline Policy', [INHERIT, 'Enabled', 'Disabled'])
+      if (selected === INHERIT) {
+        return withField(draft, 'includeBaselinePolicy', undefined)
+      }
+
+      return selected === undefined ? draft : withField(draft, 'includeBaselinePolicy', selected === 'Enabled')
+    },
   },
   additionalPolicy: {
     label: 'Additional policy',
     format: value => (typeof value === 'string' && value.length > 0 ? 'configured' : 'not set'),
-    edit: async (ctx, draft, effective) => editAdditionalPolicy(ctx, draft, effective.additionalPolicy),
+    edit: async (ctx, draft, effective) => {
+      const selected = await ctx.ui.select('Configure Additional Policy', ['Edit policy...', INHERIT])
+      if (selected === INHERIT) {
+        return withField(draft, 'additionalPolicy', undefined)
+      }
+      const value =
+        selected === undefined
+          ? undefined
+          : await ctx.ui.editor('Additional review policy', effective.additionalPolicy ?? '')
+      if (value === undefined) {
+        return draft
+      }
+
+      return withField(draft, 'additionalPolicy', value.trim() === '' ? undefined : value.trim())
+    },
   },
 }
 
-const configFields = Object.keys(fields) as ConfigField[]
+const FIELDS = Object.keys(EDITORS) as ConfigField[]
 
-/**
- * Effective values for display. The draft being edited may still violate the cross-field policy
- * invariant, so this resolves layer precedence directly rather than through the schema, which
- * rejects the whole object.
- */
-function mergeLayers(layers: ConfigLayers): AutoReviewConfig {
-  const merged = { ...DEFAULT_CONFIG }
-  for (const field of configFields) {
+function originOf(layers: Layers, field: ConfigField): ConfigScope | 'default' {
+  if (Object.hasOwn(layers.project, field)) {
+    return 'project'
+  }
+
+  return Object.hasOwn(layers.global, field) ? 'global' : 'default'
+}
+
+function formatValue(field: ConfigField, value: unknown): string {
+  return EDITORS[field].format?.(value) ?? String(value ?? 'not set')
+}
+
+/** Layer precedence without the schema, which rejects a draft that still breaks the cross-field rule. */
+function effectiveConfig(layers: Layers): AutoReviewConfig {
+  const effective = { ...DEFAULT_CONFIG }
+  for (const field of FIELDS) {
     const value = layers.project[field] ?? layers.global[field]
     if (value !== undefined) {
-      Object.assign(merged, { [field]: value })
+      Object.assign(effective, { [field]: value })
     }
   }
 
-  return merged
+  return effective
 }
 
-function formatFieldValue(field: ConfigField, value: unknown): string {
-  return fields[field].format?.(value) ?? String(value ?? 'not set')
-}
-
-function formatMenuOptions(effective: AutoReviewConfig, layers: ConfigLayers, scope: AutoReviewConfigScope): string[] {
-  return configFields.map(field => {
-    const origin = resolveOrigin(layers, field)
-    const scopeState = Object.hasOwn(layers[scope], field) ? 'override' : 'inherit'
-    return `${fields[field].label}: ${formatFieldValue(field, effective[field])} (source: ${origin}; ${scope}: ${scopeState})`
-  })
-}
-
-async function chooseScope(ctx: ExtensionCommandContext, title: string): Promise<AutoReviewConfigScope | undefined> {
+async function chooseScope(ctx: ExtensionCommandContext, title: string): Promise<ConfigScope | undefined> {
   const selected = await ctx.ui.select(title, ['Global configuration', 'Project configuration'])
-  if (selected === 'Global configuration') {
-    return 'global'
+  if (selected === undefined) {
+    return undefined
   }
-  if (selected === 'Project configuration') {
-    return 'project'
+
+  return selected === 'Global configuration' ? 'global' : 'project'
+}
+
+function notifyActivation(
+  ctx: ExtensionCommandContext,
+  activation: ActivationResult,
+  messages: { failed: string; pending: string; active: string },
+): void {
+  if (activation.kind === 'failed') {
+    ctx.ui.notify(`${messages.failed}: ${activation.message}`, 'error')
+  } else if (activation.kind === 'pending') {
+    ctx.ui.notify(messages.pending, 'warning')
+  } else {
+    ctx.ui.notify(messages.active, 'info')
   }
-  return undefined
 }
 
 async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoReviewCommandController): Promise<void> {
   if (ctx.mode !== 'tui') {
     ctx.ui.notify(`/${COMMAND_NAME} requires interactive TUI mode.`, 'warning')
+
     return
   }
-
   await ctx.waitForIdle()
   const scope = await chooseScope(ctx, 'Select configuration scope')
   if (scope === undefined) {
     return
   }
 
-  const selected = controller.configStore.readScope(ctx.cwd, scope)
-  const other = controller.configStore.readScope(ctx.cwd, scope === 'global' ? 'project' : 'global')
-  if (!selected.valid) {
+  const selected = readScope(ctx.cwd, scope)
+  const other = readScope(ctx.cwd, scope === 'global' ? 'project' : 'global')
+  const cannotEdit = (snapshot: { path: string; issue: string }): void => {
     ctx.ui.notify(
-      `Cannot edit config at '${selected.path}': ${selected.issue.message}. Use reset to remove it or fix it manually.`,
+      `Cannot edit config at '${snapshot.path}': ${snapshot.issue}. Use reset to remove it or fix it manually.`,
       'error',
     )
+  }
+  if (!selected.valid) {
+    cannotEdit(selected)
+
     return
   }
   if (!other.valid) {
-    ctx.ui.notify(
-      `Cannot edit config at '${other.path}': ${other.issue.message}. Use reset to remove it or fix it manually.`,
-      'error',
-    )
+    cannotEdit(other)
+
     return
   }
 
-  let draft: AutoReviewConfigFile = { ...selected.config }
-  while (true) {
-    const layers: ConfigLayers =
+  let draft = selected.config
+  for (;;) {
+    const layers: Layers =
       scope === 'global' ? { global: draft, project: other.config } : { global: other.config, project: draft }
-    const effective = mergeLayers(layers)
-    const fieldOptions = formatMenuOptions(effective, layers, scope)
-    const selectedOption = await ctx.ui.select(`Permission auto-review settings (${scope})`, [
-      ...fieldOptions,
-      SAVE,
-      CANCEL,
-    ])
-    if (selectedOption === undefined || selectedOption === CANCEL) {
+    const effective = effectiveConfig(layers)
+    const options = FIELDS.map(field => {
+      const state = Object.hasOwn(draft, field) ? 'override' : 'inherit'
+
+      return `${EDITORS[field].label}: ${formatValue(field, effective[field])} (source: ${originOf(layers, field)}; ${scope}: ${state})`
+    })
+    const choice = await ctx.ui.select(`Permission auto-review settings (${scope})`, [...options, SAVE, CANCEL])
+    if (choice === undefined || choice === CANCEL) {
       return
     }
-    if (selectedOption === SAVE) {
-      const saved = controller.configStore.save(selected, draft)
+    if (choice === SAVE) {
+      const saved = saveScope(selected, draft)
       if (!saved.ok) {
         ctx.ui.notify(saved.message, 'error')
         continue
       }
-      const activation = controller.applyConfig(saved.loadResult)
-      if (activation.kind === 'failed') {
-        ctx.ui.notify(`Config saved, but the current reviewer could not be replaced: ${activation.message}`, 'error')
-      } else if (activation.kind === 'pending') {
-        ctx.ui.notify('Config saved. It will become active when pi-permission-system is ready.', 'warning')
-      } else {
-        ctx.ui.notify('Config saved and applied without reloading the Pi session.', 'info')
-      }
+      notifyActivation(ctx, controller.applyConfig(saved.loadResult), {
+        failed: 'Config saved, but the current reviewer could not be replaced',
+        pending: 'Config saved. It will become active when pi-permission-system is ready.',
+        active: 'Config saved and applied without reloading the Pi session.',
+      })
+
       return
     }
-
-    const field = configFields[fieldOptions.indexOf(selectedOption)]
+    const field = FIELDS[options.indexOf(choice)]
     if (field !== undefined) {
-      draft = await fields[field].edit(ctx, draft, effective)
+      draft = await EDITORS[field].edit(ctx, draft, effective)
     }
   }
 }
 
-function getScopeLayers(store: AutoReviewConfigStore, cwd: string): ConfigLayers | undefined {
-  const global = store.readScope(cwd, 'global')
-  const project = store.readScope(cwd, 'project')
-  return global.valid && project.valid ? { global: global.config, project: project.config } : undefined
-}
+function showConfig(ctx: ExtensionCommandContext, active: AutoReviewConfig | undefined): void {
+  const global = readScope(ctx.cwd, 'global')
+  const project = readScope(ctx.cwd, 'project')
+  if (active === undefined || !global.valid || !project.valid) {
+    const issues = loadConfig(ctx.cwd)
+      .issues.map(issue => `\n${issue}`)
+      .join('')
+    ctx.ui.notify(`Automatic review is disabled because the active config is invalid.${issues}`, 'warning')
 
-function showConfig(ctx: ExtensionCommandContext, controller: AutoReviewCommandController): void {
-  const paths = controller.configStore.getPaths(ctx.cwd)
-  const active = controller.getActiveConfig()
-  const layers = getScopeLayers(controller.configStore, ctx.cwd)
-  if (active === undefined || layers === undefined) {
-    const result = controller.configStore.load(ctx.cwd)
-    const issues = result.issues.map(issue => `${issue.sourcePath}: ${issue.message}`).join('\n')
-    ctx.ui.notify(
-      `Automatic review is disabled because the active config is invalid.${issues ? `\n${issues}` : ''}`,
-      'warning',
-    )
     return
   }
 
-  const fields = configFields.map(field => {
-    const origin = resolveOrigin(layers, field)
-    return `${field}=${formatFieldValue(field, active[field])} (${origin})`
-  })
-  ctx.ui.notify(
-    `permission-auto-review:\n${fields.join('\n')}\nglobal=${paths.globalPath}\nproject=${paths.projectPath}`,
-    'info',
-  )
-}
-
-function showPaths(ctx: ExtensionCommandContext, controller: AutoReviewCommandController): void {
-  const paths = controller.configStore.getPaths(ctx.cwd)
-  ctx.ui.notify(
-    `permission-auto-review config paths:\nglobal=${paths.globalPath}\nproject=${paths.projectPath}`,
-    'info',
-  )
+  const layers = { global: global.config, project: project.config }
+  const lines = FIELDS.map(field => `${field}=${formatValue(field, active[field])} (${originOf(layers, field)})`)
+  ctx.ui.notify(`permission-auto-review:\n${lines.join('\n')}\nglobal=${global.path}\nproject=${project.path}`, 'info')
 }
 
 async function resetConfig(
   ctx: ExtensionCommandContext,
   controller: AutoReviewCommandController,
-  requestedScope: string | undefined,
+  requested: string | undefined,
 ): Promise<void> {
   if (ctx.mode !== 'tui') {
     ctx.ui.notify(`/${COMMAND_NAME} reset requires interactive TUI mode.`, 'warning')
+
     return
   }
   await ctx.waitForIdle()
-
-  let scope: AutoReviewConfigScope | undefined
-  if (requestedScope === 'global' || requestedScope === 'project') {
-    scope = requestedScope
-  } else if (requestedScope === undefined) {
-    scope = await chooseScope(ctx, 'Select configuration scope to reset')
-  } else {
+  if (requested !== undefined && requested !== 'global' && requested !== 'project') {
     ctx.ui.notify(USAGE, 'warning')
+
     return
   }
+  const scope = requested ?? (await chooseScope(ctx, 'Select configuration scope to reset'))
   if (scope === undefined) {
     return
   }
 
-  const snapshot = controller.configStore.readScope(ctx.cwd, scope)
+  const snapshot = readScope(ctx.cwd, scope)
   const confirmed = await ctx.ui.confirm(
     `Reset ${scope} auto-review config?`,
     `Delete '${snapshot.path}' and immediately apply inherited values?`,
@@ -391,101 +313,60 @@ async function resetConfig(
   if (!confirmed) {
     return
   }
-
-  const reset = controller.configStore.reset(snapshot)
+  const reset = resetScope(snapshot)
   if (!reset.ok) {
     ctx.ui.notify(reset.message, 'error')
+
     return
   }
-  const activation = controller.applyConfig(reset.loadResult)
-  if (activation.kind === 'failed') {
-    ctx.ui.notify(`Config reset, but the current reviewer could not be replaced: ${activation.message}`, 'error')
-  } else if (activation.kind === 'pending') {
-    ctx.ui.notify(
-      `${scope} config reset. The inherited config will activate when pi-permission-system is ready.`,
-      'warning',
-    )
-  } else if (reset.loadResult.config === undefined) {
-    ctx.ui.notify(
-      `${scope} config reset, but automatic review remains disabled because another config layer is invalid.`,
-      'warning',
-    )
-  } else {
-    ctx.ui.notify(`${scope} config reset and inherited values applied without reloading the Pi session.`, 'info')
-  }
+  notifyActivation(ctx, controller.applyConfig(reset.loadResult), {
+    failed: 'Config reset, but the current reviewer could not be replaced',
+    pending: `${scope} config reset. The inherited config will activate when pi-permission-system is ready.`,
+    active: `${scope} config reset and inherited values applied without reloading the Pi session.`,
+  })
 }
 
-function getArgumentCompletions(
-  argumentPrefix: string,
-): Array<{ value: string; label: string; description: string }> | null {
-  const normalized = argumentPrefix.trimStart().toLowerCase()
-  const items = normalized.startsWith('reset ')
-    ? [
-        {
-          value: 'reset global',
-          label: 'Reset global config',
-          description: 'Delete the global auto-review config',
-        },
-        {
-          value: 'reset project',
-          label: 'Reset project config',
-          description: 'Delete the project auto-review config',
-        },
-      ]
-    : [
-        {
-          value: 'show',
-          label: 'Show active config',
-          description: 'Display effective values and their origins',
-        },
-        {
-          value: 'path',
-          label: 'Show config paths',
-          description: 'Display global and project config paths',
-        },
-        {
-          value: 'reset',
-          label: 'Reset config',
-          description: 'Delete one config layer and apply inherited values',
-        },
-        {
-          value: 'help',
-          label: 'Show help',
-          description: 'Display command usage',
-        },
-      ]
-  const filtered = items.filter(item => item.value.startsWith(normalized))
-  return filtered.length > 0 ? filtered : null
-}
+const SUBCOMMANDS = [
+  { value: 'show', label: 'Show active config', description: 'Display effective values and their origins' },
+  { value: 'path', label: 'Show config paths', description: 'Display global and project config paths' },
+  { value: 'reset', label: 'Reset config', description: 'Delete one config layer and apply inherited values' },
+  { value: 'help', label: 'Show help', description: 'Display command usage' },
+]
+
+const RESET_SCOPES = [
+  { value: 'reset global', label: 'Reset global config', description: 'Delete the global auto-review config' },
+  { value: 'reset project', label: 'Reset project config', description: 'Delete the project auto-review config' },
+]
 
 export function registerAutoReviewCommand(pi: ExtensionAPI, controller: AutoReviewCommandController): void {
   pi.registerCommand(COMMAND_NAME, {
     description: 'Configure pi-permission-auto-review without reloading the Pi session',
-    getArgumentCompletions,
-    handler: async (args, ctx) => {
+    getArgumentCompletions(prefix) {
+      const normalized = prefix.trimStart().toLowerCase()
+      const matches = (normalized.startsWith('reset ') ? RESET_SCOPES : SUBCOMMANDS).filter(item =>
+        item.value.startsWith(normalized),
+      )
+
+      return matches.length > 0 ? matches : null
+    },
+    async handler(args, ctx) {
       const normalized = args.trim().toLowerCase()
-      if (!normalized) {
+      if (normalized === '') {
         await openSettingsMenu(ctx, controller)
-        return
-      }
-      if (normalized === 'show') {
-        showConfig(ctx, controller)
-        return
-      }
-      if (normalized === 'path') {
-        showPaths(ctx, controller)
-        return
-      }
-      if (normalized === 'help') {
+      } else if (normalized === 'show') {
+        showConfig(ctx, controller.getActiveConfig())
+      } else if (normalized === 'path') {
+        ctx.ui.notify(
+          `permission-auto-review config paths:\nglobal=${configPath(ctx.cwd, 'global')}\nproject=${configPath(ctx.cwd, 'project')}`,
+          'info',
+        )
+      } else if (normalized === 'help') {
         ctx.ui.notify(USAGE, 'info')
-        return
+      } else if (normalized === 'reset' || normalized.startsWith('reset ')) {
+        await resetConfig(ctx, controller, normalized.split(WHITESPACE)[1])
+      } else {
+        ctx.ui.notify(USAGE, 'warning')
       }
-      if (normalized === 'reset' || normalized.startsWith('reset ')) {
-        const scope = normalized.split(WHITESPACE)[1]
-        await resetConfig(ctx, controller, scope)
-        return
-      }
-      ctx.ui.notify(USAGE, 'warning')
     },
   })
 }

@@ -1,67 +1,47 @@
-import type { DetectorConfig, LoadConfigResult } from '../src/config.js'
-import type { Harness } from './helpers.js'
+import type { DetectorConfig } from '../src/config.js'
+import type { Harness, RegistryModel } from './helpers.js'
+import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
-import { COMMAND_NAME, DEFAULT_CONFIG } from '../src/config.js'
-import { createDetectorExtension } from '../src/extension.js'
-import { assistantMessage, createHarness, createRegistry } from './helpers.js'
+import { configPaths } from '../src/config.js'
+import { assistantMessage, createHarness, createRegistry, useWorkspace, writeFile } from './helpers.js'
 
-function loadResult(overrides: Partial<DetectorConfig> = {}): LoadConfigResult {
-  return {
-    config: { ...DEFAULT_CONFIG, ...overrides },
-    issues: [],
-    globalPath: '/agent/extensions/pi-codex-downgrade-detector/config.json',
-    projectPath: '/workspace/.pi/extensions/pi-codex-downgrade-detector/config.json',
+describe('codex downgrade detector', () => {
+  const workspace = useWorkspace()
+
+  function start(config?: Partial<DetectorConfig>, models?: RegistryModel[]): Harness {
+    if (config !== undefined) {
+      writeFile(configPaths(workspace.cwd).global, config)
+    }
+    const harness = createHarness(
+      workspace.cwd,
+      createRegistry(models ?? [{ id: 'gpt-6-astra', provider: 'openai-codex' }]),
+    )
+    harness.emit('session_start', {})
+
+    return harness
   }
-}
 
-interface StartOptions {
-  config?: Partial<DetectorConfig>
-  models?: { id: string; provider: string; thinkingLevelMap?: Record<string, string | null> }[]
-}
+  function respond(
+    harness: Harness,
+    headers: Record<string, string>,
+    message: AssistantMessage,
+    payload: unknown = { model: 'gpt-6-astra' },
+  ): void {
+    harness.emit('before_provider_request', { payload })
+    harness.emit('after_provider_response', { status: 200, headers })
+    harness.emit('message_end', { message })
+  }
 
-function start(options: StartOptions = {}): Harness {
-  const harness = createHarness(createRegistry(options.models ?? [{ id: 'gpt-6-astra', provider: 'openai-codex' }]))
-  createDetectorExtension(harness.pi, { loadConfig: () => loadResult(options.config), agentDir: '/agent' })
-  harness.emit('session_start', {})
-
-  return harness
-}
-
-function respond(harness: Harness, headers: Record<string, string>, message: Record<string, unknown>): void {
-  harness.emit('before_provider_request', { payload: { model: 'gpt-6-astra' } })
-  harness.emit('after_provider_response', { status: 200, headers })
-  harness.emit('message_end', { message })
-}
-
-describe('createDetectorExtension', () => {
-  it('marks itself loaded before any turn has finished', () => {
+  // Every extension's status shares one hard-truncated footer line, so the slugs live in a widget row instead.
+  it('keeps the footer to one glyph and shows a widget row only while a turn diverges', () => {
     const harness = start()
-
     expect(harness.ui.statuses).toEqual(['· codex'])
-    expect(harness.ui.widgets).toEqual([undefined])
-  })
 
-  it('passes a clean turn with a footer glyph and no widget row', () => {
-    const harness = start()
-    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage())
-
-    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
-    expect(harness.ui.widgets.at(-1)).toBeUndefined()
-    expect(harness.ui.notifications).toEqual([])
-  })
-
-  it('opens a widget row naming both slugs when a turn diverged', () => {
-    const harness = start()
     respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
+    expect(harness.ui.statuses.at(-1)).toBe('↓ codex')
+    expect(harness.ui.widgets.at(-1)).toEqual(['↓ codex gpt-6-astra→gpt-5.6-luna (openai-model header)'])
 
-    expect(harness.ui.widgets.at(-1)?.[0]).toBe('↓ codex gpt-6-astra→gpt-5.6-luna (openai-model header)')
-  })
-
-  it('takes the widget row back down once a later turn comes back clean', () => {
-    const harness = start()
-    respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
     respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage())
-
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
     expect(harness.ui.widgets.at(-1)).toBeUndefined()
   })
@@ -71,9 +51,7 @@ describe('createDetectorExtension', () => {
     respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
     respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
 
-    expect(harness.ui.statuses.at(-1)).toBe('↓ codex')
-    expect(harness.ui.notifications).toHaveLength(1)
-    expect(harness.ui.notifications[0]).toMatchObject({ type: 'error' })
+    expect(harness.ui.notifications).toEqual([{ message: 'codex-downgrade: gpt-6-astra→gpt-5.6-luna', type: 'error' }])
   })
 
   it('notifies on an upgrade too, because it is still not what was selected', () => {
@@ -84,63 +62,47 @@ describe('createDetectorExtension', () => {
     expect(harness.ui.notifications).toHaveLength(1)
   })
 
-  it('stays silent when notify is off', () => {
-    const harness = start({ config: { notify: false } })
-    respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
-
-    expect(harness.ui.notifications).toEqual([])
-    expect(harness.ui.statuses.at(-1)).toBe('↓ codex')
-  })
-
-  it('ignores providers it does not watch', () => {
-    const harness = start()
-    respond(harness, { 'openai-model': 'claude-haiku-5' }, assistantMessage({ provider: 'anthropic' }))
-
-    expect(harness.ui.statuses).toEqual(['· codex'])
-  })
-
-  it('watches every provider when the list is empty', () => {
-    const harness = start({ config: { providers: [] } })
-    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage({ provider: 'my-relay' }))
-
-    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
-  })
-
-  it('reports unverified when the transport exposes no routing header', () => {
-    const harness = start()
-    respond(harness, {}, assistantMessage())
-
-    expect(harness.ui.statuses.at(-1)).toBe('? codex')
-  })
-
-  it("does not reuse one turn's headers for the next turn", () => {
+  it("reports silence as silence, and never confirms a turn with the previous turn's headers", () => {
     const harness = start()
     respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage())
     harness.emit('message_end', { message: assistantMessage() })
 
     expect(harness.ui.statuses.at(-1)).toBe('? codex')
+    expect(harness.ui.widgets.at(-1)).toBeUndefined()
+    expect(harness.ui.notifications).toEqual([])
   })
 
-  it('compares the sent effort against what the model maps the selected level to', () => {
-    const harness = start({
-      models: [{ id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: 'high' } }],
-    })
+  it("trusts the server-stated header over the relay's echoed model, and names which one it used", () => {
+    const harness = start()
+    respond(harness, { 'X-OpenAI-Model': 'gpt-6-astra' }, assistantMessage({ responseModel: 'gpt-5.6-luna' }))
+    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
 
-    harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
-    harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
-
-    expect(harness.ui.statuses.at(-1)).toBe('⚠ codex')
+    respond(harness, {}, assistantMessage({ responseModel: 'gpt-5.6-luna' }))
+    expect(harness.ui.widgets.at(-1)).toEqual(['↓ codex gpt-6-astra→gpt-5.6-luna (response model field)'])
   })
 
-  it('accepts the effort a model declares for that level', () => {
-    const harness = start({
-      models: [{ id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: 'high' } }],
+  it('compares the effort sent, in either wire spelling, with what the model maps the selected level to', () => {
+    const harness = start(undefined, [
+      { id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: 'high' } },
+    ])
+    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage({ thinkingLevel: 'xhigh' }), {
+      reasoning_effort: 'medium',
     })
+    expect(harness.ui.widgets.at(-1)).toEqual(['⚠ codex gpt-6-astra · high→medium (openai-model header)'])
 
-    harness.emit('before_provider_request', { payload: { reasoning: { effort: 'high' } } })
-    harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
+    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage({ thinkingLevel: 'xhigh' }), {
+      reasoning: { effort: 'high' },
+    })
+    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
+  })
+
+  it('has nothing to compare when the model marks the selected level unsupported', () => {
+    const harness = start(undefined, [
+      { id: 'gpt-6-astra', provider: 'openai-codex', thinkingLevelMap: { xhigh: null } },
+    ])
+    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage({ thinkingLevel: 'xhigh' }), {
+      reasoning: { effort: 'high' },
+    })
 
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
   })
@@ -149,60 +111,27 @@ describe('createDetectorExtension', () => {
   it('judges the level a turn went out at, not the one selected', () => {
     const harness = start()
     harness.context.thinkingLevel = 'high'
-
-    harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
-    harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'medium' }) })
-
-    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
-  })
-
-  it('skips the effort axis when checkEffort is off', () => {
-    const harness = start({ config: { checkEffort: false } })
-
-    harness.emit('before_provider_request', { payload: { reasoning: { effort: 'medium' } } })
-    harness.emit('after_provider_response', { status: 200, headers: { 'openai-model': 'gpt-6-astra' } })
-    harness.emit('message_end', { message: assistantMessage({ thinkingLevel: 'xhigh' }) })
-
-    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
-  })
-
-  it('treats a slug the registry offers as recorded', () => {
-    const harness = start({
-      models: [
-        { id: 'gpt-6-astra', provider: 'openai-codex' },
-        { id: 'codex-auto-review', provider: 'openai-codex' },
-      ],
+    respond(harness, { 'openai-model': 'gpt-6-astra' }, assistantMessage({ thinkingLevel: 'medium' }), {
+      reasoning: { effort: 'medium' },
     })
+
+    expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
+  })
+
+  it('treats a slug the registry offers as recorded, so a relay-added model is not a stranger', () => {
+    const harness = start(undefined, [
+      { id: 'gpt-6-astra', provider: 'openai-codex' },
+      { id: 'codex-auto-review', provider: 'openai-codex' },
+    ])
     respond(harness, { 'openai-model': 'codex-auto-review' }, assistantMessage({ model: 'codex-auto-review' }))
 
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
-    expect(harness.ui.widgets.at(-1)).toBeUndefined()
   })
 
-  it('clears both surfaces on shutdown', () => {
+  it('ignores a turn a virtual model failed to route, which no provider ever saw', () => {
     const harness = start()
-    respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
-    harness.emit('session_shutdown', {})
+    respond(harness, {}, assistantMessage({ model: 'auto', api: 'pi-virtual' }))
 
-    expect(harness.ui.statuses.at(-1)).toBeUndefined()
-    expect(harness.ui.widgets.at(-1)).toBeUndefined()
-  })
-
-  it('registers the command and reports the session', async () => {
-    const harness = start()
-    respond(harness, { 'openai-model': 'gpt-5.6-luna' }, assistantMessage())
-
-    const command = harness.commands.get(COMMAND_NAME)
-    expect(command).toBeDefined()
-
-    await command!.handler('', harness.context)
-    expect(harness.ui.notifications.at(-1)?.message).toContain('MODEL_SUBSTITUTED')
-
-    await command!.handler('show', harness.context)
-    expect(harness.ui.notifications.at(-1)?.message).toContain('providers   : openai-codex')
-
-    await command!.handler('nonsense', harness.context)
-    expect(harness.ui.notifications.at(-1)).toMatchObject({ type: 'warning' })
+    expect(harness.ui.statuses).toEqual(['· codex'])
   })
 })

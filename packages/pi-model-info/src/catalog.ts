@@ -1,19 +1,28 @@
-import type { CachedEnvelope } from './cache.js'
-import type { CatalogFetcher } from './fetcher.js'
-import type { CatalogIndex, NormalizedSource, ResolvedConfig, SourceId } from './types.js'
-import { CACHE_VERSION, CatalogCache, toNormalizedSource } from './cache.js'
+import type { CatalogEntry, CatalogIndex, NormalizedSource, ResolvedConfig, SourceId } from './types.js'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
 import { buildCatalogIndex } from './catalog-index.js'
-import { MODELS_DEV_URL, normalizeModelsDev, normalizePiDev, PI_DEV_URL } from './catalog-sources.js'
-import { catalogFetcher } from './fetcher.js'
+import { normalizeModelsDev, normalizePiDev } from './catalog-sources.js'
+import { describeError, EXTENSION_ID } from './util.js'
 
-interface SourceDescriptor {
-  url: string
-  normalize: (payload: unknown) => NormalizedSource
+const CACHE_VERSION = 1
+
+const SOURCES: Record<SourceId, { url: string; file: string; normalize: (payload: unknown) => NormalizedSource }> = {
+  'pi.dev': { url: 'https://pi.dev/api/models', file: 'pi-dev.json', normalize: normalizePiDev },
+  'models.dev': { url: 'https://models.dev/models.json', file: 'models-dev.json', normalize: normalizeModelsDev },
 }
 
-const SOURCES: Record<SourceId, SourceDescriptor> = {
-  'pi.dev': { url: PI_DEV_URL, normalize: normalizePiDev },
-  'models.dev': { url: MODELS_DEV_URL, normalize: normalizeModelsDev },
+interface CachedEnvelope {
+  version: number
+  source: SourceId
+  etag: string | undefined
+  lastModified: string | undefined
+  fetchedAt: number
+  entryCount: number
+  entries: CatalogEntry[]
+  /** `Map` does not survive JSON, so the vendor oracle is persisted as pairs. */
+  vendors: [string, string][]
 }
 
 interface SourceStatus {
@@ -30,54 +39,122 @@ export interface CatalogSnapshot {
   sources: SourceStatus[]
 }
 
-export interface CatalogStoreDeps {
-  cache?: CatalogCache | undefined
-  fetcher?: CatalogFetcher | undefined
-  now?: (() => number) | undefined
-  random?: (() => number) | undefined
+function cachePath(config: ResolvedConfig, source: SourceId): string {
+  return join(config.cache.dir ?? join(getAgentDir(), 'extensions', EXTENSION_ID, 'cache'), SOURCES[source].file)
+}
+
+/** A corrupt or foreign envelope reads as absent and stays on disk until the next successful fetch replaces it. */
+function readCache(config: ResolvedConfig, source: SourceId): CachedEnvelope | undefined {
+  let envelope: Partial<CachedEnvelope> | null
+  try {
+    envelope = JSON.parse(readFileSync(cachePath(config, source), 'utf8')) as Partial<CachedEnvelope> | null
+  } catch {
+    return undefined
+  }
+  const usable =
+    envelope?.version === CACHE_VERSION &&
+    envelope.source === source &&
+    Array.isArray(envelope.entries) &&
+    Array.isArray(envelope.vendors) &&
+    typeof envelope.fetchedAt === 'number' &&
+    envelope.entries.length === envelope.entryCount
+
+  return usable ? (envelope as CachedEnvelope) : undefined
+}
+
+function writeCache(config: ResolvedConfig, envelope: CachedEnvelope): void {
+  const path = cachePath(config, envelope.source)
+  const temporary = `${path}.tmp`
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(temporary, `${JSON.stringify(envelope)}\n`, 'utf8')
+    renameSync(temporary, path)
+  } catch (error) {
+    try {
+      rmSync(temporary, { force: true })
+    } catch {
+      // The write error is the actionable one.
+    }
+    throw error
+  }
+}
+
+/** Reads through the stream, so an oversized payload is abandoned rather than buffered whole. */
+async function readCapped(response: Response, maxBytes: number): Promise<string> {
+  if (response.body === null) {
+    return ''
+  }
+  // Node's `undici` types reach us as `any`, so the chunk shape is pinned here.
+  const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  let size = 0
+  try {
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      size += chunk.value.byteLength
+      if (size > maxBytes) {
+        throw new Error(`response exceeded ${maxBytes} bytes`)
+      }
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return text + decoder.decode()
+}
+
+/** `undefined` for a 304, meaning the cached copy is still current. */
+async function fetchCatalog(
+  config: ResolvedConfig,
+  source: SourceId,
+  cached: CachedEnvelope | undefined,
+  signal: AbortSignal,
+): Promise<{ body: unknown; etag: string | undefined; lastModified: string | undefined } | undefined> {
+  const headers = new Headers({ accept: 'application/json' })
+  if (cached?.etag !== undefined) {
+    headers.set('if-none-match', cached.etag)
+  }
+  if (cached?.lastModified !== undefined) {
+    headers.set('if-modified-since', cached.lastModified)
+  }
+  const response = await fetch(SOURCES[source].url, {
+    headers,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(config.network.timeoutMs)]),
+  })
+  if (!response.ok) {
+    await response.body?.cancel()
+    if (response.status === 304) {
+      return undefined
+    }
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  return {
+    body: JSON.parse(await readCapped(response, config.network.maxBytes)),
+    etag: response.headers.get('etag') ?? undefined,
+    lastModified: response.headers.get('last-modified') ?? undefined,
+  }
 }
 
 export class CatalogStore {
-  private readonly cache: CatalogCache
-  private readonly fetcher: CatalogFetcher
-  private readonly now: () => number
-  private readonly random: () => number
   private readonly errors = new Map<SourceId, string>()
 
-  constructor(deps: CatalogStoreDeps = {}) {
-    this.cache = deps.cache ?? new CatalogCache()
-    this.fetcher = deps.fetcher ?? catalogFetcher
-    this.now = deps.now ?? (() => Date.now())
-    this.random = deps.random ?? Math.random
-  }
-
-  /** Cache only. Safe to call before any network work has happened. */
+  /** Cache only, so it is safe before any network work has happened. */
   load(config: ResolvedConfig): CatalogSnapshot {
-    const loaded = new Map<SourceId, CachedEnvelope>()
-    for (const source of config.sources) {
-      const cached = this.cache.read(source)
-      if (cached !== undefined) {
-        loaded.set(source, cached)
-      }
-    }
-
-    return this.snapshot(config, loaded)
+    return this.snapshot(
+      config,
+      config.sources.map(source => readCache(config, source)),
+    )
   }
 
   async refresh(config: ResolvedConfig, signal: AbortSignal, force = false): Promise<CatalogSnapshot> {
-    const loaded = new Map<SourceId, CachedEnvelope>()
-
+    const envelopes: (CachedEnvelope | undefined)[] = []
     for (const source of config.sources) {
-      const envelope = await this.refreshOne(config, source, signal, force)
-      if (envelope !== undefined) {
-        loaded.set(source, envelope)
-      }
-      if (signal.aborted) {
-        break
-      }
+      envelopes.push(signal.aborted ? undefined : await this.refreshOne(config, source, signal, force))
     }
 
-    return this.snapshot(config, loaded)
+    return this.snapshot(config, envelopes)
   }
 
   private async refreshOne(
@@ -86,12 +163,10 @@ export class CatalogStore {
     signal: AbortSignal,
     force: boolean,
   ): Promise<CachedEnvelope | undefined> {
-    const descriptor = SOURCES[source]
-    const cached = this.cache.read(source)
-
+    const cached = readCache(config, source)
     // Jitter keeps several Pi processes on one machine from expiring together.
-    const ttl = config.cache.ttlMs * (0.9 + this.random() * 0.2)
-    if (!force && cached !== undefined && this.now() - cached.fetchedAt < ttl) {
+    const ttl = config.cache.ttlMs * (0.9 + Math.random() * 0.2)
+    if (!force && cached !== undefined && Date.now() - cached.fetchedAt < ttl) {
       this.errors.delete(source)
 
       return cached
@@ -100,90 +175,67 @@ export class CatalogStore {
       return cached
     }
 
-    const outcome = await this.fetcher.get(
-      {
-        url: descriptor.url,
-        etag: cached?.etag,
-        lastModified: cached?.lastModified,
-        timeoutMs: config.network.timeoutMs,
-        maxBytes: config.network.maxBytes,
-      },
-      signal,
-    )
-
-    if (outcome.status === 'not-modified') {
-      if (cached === undefined) {
-        this.errors.set(source, '304 with no cached copy')
-
-        return undefined
+    let envelope: CachedEnvelope
+    try {
+      const fetched = await fetchCatalog(config, source, cached, signal)
+      if (fetched === undefined) {
+        if (cached === undefined) {
+          throw new Error('304 with no cached copy')
+        }
+        envelope = { ...cached, fetchedAt: Date.now() }
+      } else {
+        const { entries, vendors } = SOURCES[source].normalize(fetched.body)
+        if (entries.length === 0) {
+          throw new Error('catalog contained no usable models')
+        }
+        envelope = {
+          version: CACHE_VERSION,
+          source,
+          etag: fetched.etag,
+          lastModified: fetched.lastModified,
+          fetchedAt: Date.now(),
+          entryCount: entries.length,
+          entries,
+          vendors: [...vendors],
+        }
       }
-      const renewed: CachedEnvelope = { ...cached, fetchedAt: this.now() }
-      this.persist(source, renewed)
-      this.errors.delete(source)
-
-      return renewed
-    }
-
-    if (outcome.status === 'error') {
-      // Stale-on-failure: an old catalog beats no catalog, and the file is untouched.
-      this.errors.set(source, outcome.message)
+    } catch (error) {
+      // An old catalog beats no catalog, and the file on disk stays untouched.
+      this.errors.set(source, describeError(error))
 
       return cached
     }
 
-    const normalized = descriptor.normalize(outcome.body)
-    if (normalized.entries.length === 0) {
-      this.errors.set(source, 'catalog contained no usable models')
-
-      return cached
-    }
-
-    const envelope: CachedEnvelope = {
-      version: CACHE_VERSION,
-      source,
-      etag: outcome.etag,
-      lastModified: outcome.lastModified,
-      fetchedAt: this.now(),
-      entryCount: normalized.entries.length,
-      entries: normalized.entries,
-      vendors: [...normalized.vendors],
-    }
-    this.persist(source, envelope)
     this.errors.delete(source)
+    try {
+      writeCache(config, envelope)
+    } catch (error) {
+      // A cache that cannot be written is a slower extension, not a broken one.
+      this.errors.set(source, `cache write failed: ${describeError(error)}`)
+    }
 
     return envelope
   }
 
-  private persist(source: SourceId, envelope: CachedEnvelope): void {
-    try {
-      this.cache.write(envelope)
-    } catch (error) {
-      // A cache we cannot write is a slower extension, not a broken one.
-      this.errors.set(source, `cache write failed: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  private snapshot(config: ResolvedConfig, loaded: Map<SourceId, CachedEnvelope>): CatalogSnapshot {
-    const sources = config.sources.map((source): SourceStatus => {
-      const envelope = loaded.get(source)
-
-      return {
-        source,
-        fetchedAt: envelope?.fetchedAt,
-        entryCount: envelope?.entries.length ?? 0,
-        lastError: this.errors.get(source),
-      }
-    })
-
-    const normalized = config.sources
-      .map(source => loaded.get(source))
-      .filter((envelope): envelope is CachedEnvelope => envelope !== undefined)
-      .map(toNormalizedSource)
+  /** `envelopes` line up with `config.sources`, which is priority order. */
+  private snapshot(config: ResolvedConfig, envelopes: (CachedEnvelope | undefined)[]): CatalogSnapshot {
+    const loaded = envelopes.filter(envelope => envelope !== undefined)
 
     return {
-      index: buildCatalogIndex(normalized, config.sources),
-      status: normalized.some(source => source.entries.length > 0) ? 'ready' : 'unavailable',
-      sources,
+      index: buildCatalogIndex(
+        loaded.map(envelope => ({
+          source: envelope.source,
+          entries: envelope.entries,
+          vendors: new Map(envelope.vendors),
+        })),
+      ),
+      status: loaded.some(envelope => envelope.entries.length > 0) ? 'ready' : 'unavailable',
+      sources: config.sources.map((source, position) => ({
+        source,
+        fetchedAt: envelopes[position]?.fetchedAt,
+        entryCount: envelopes[position]?.entries.length ?? 0,
+        lastError: this.errors.get(source),
+      })),
     }
   }
 }

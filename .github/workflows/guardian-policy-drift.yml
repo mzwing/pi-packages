@@ -36,8 +36,7 @@ jobs:
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
 
-      # The script exits non-zero when upstream moved, which is a finding rather
-      # than a failure — capture the code so the reporting step still runs.
+      # A non-zero exit means upstream moved, a finding rather than a failure, so the code is captured.
       - name: Check for upstream movement
         id: check
         env:
@@ -59,8 +58,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # One open issue at a time, edited in place rather than commented on, so an
-      # unported drift does not accumulate a weekly comment thread.
+      # One open issue, edited in place, so an unported drift does not collect a weekly comment thread.
       - name: Open or refresh the drift issue
         if: steps.check.outputs.drifted != '0'
         env:

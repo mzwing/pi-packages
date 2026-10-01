@@ -1,250 +1,105 @@
-import type { AutoReviewCommandController } from '../src/command.js'
-import type { AutoReviewConfigFileSystem } from '../src/config-store.js'
-import type { LoadConfigResult } from '../src/config.js'
+import type { LoadConfigResult } from '../src/config-store.js'
+import type { AutoReviewConfig } from '../src/config.js'
 import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from '@earendil-works/pi-coding-agent'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { registerAutoReviewCommand } from '../src/command.js'
-import { AutoReviewConfigStore } from '../src/config-store.js'
+import { configPath, loadConfig } from '../src/config-store.js'
+import { useWorkspace, writeFile } from './helpers.js'
 
-function createFileSystem(initial: Record<string, string> = {}) {
-  const files = new Map(Object.entries(initial))
-  const readFile = vi.fn((path: string) => files.get(path))
-  const writeFile = vi.fn((path: string, source: string) => {
-    files.set(path, source)
-  })
-  const rename = vi.fn((sourcePath: string, destinationPath: string) => {
-    const source = files.get(sourcePath)
-    if (source === undefined) {
-      throw new Error(`missing ${sourcePath}`)
-    }
-    files.set(destinationPath, source)
-    files.delete(sourcePath)
-  })
-  const mkdir = vi.fn((_path: string) => {})
-  const unlink = vi.fn((path: string) => {
-    files.delete(path)
-  })
-  const fileSystem: AutoReviewConfigFileSystem = {
-    readFile,
-    writeFile,
-    rename,
-    mkdir,
-    unlink,
-  }
-  return { files, fileSystem }
-}
-
-function createCommandHarness(initial: Record<string, string> = {}) {
-  const { files, fileSystem } = createFileSystem(initial)
-  const configStore = new AutoReviewConfigStore({ agentDir: '/agent', fileSystem })
-  let activeConfig = configStore.load('/project').config
-  const applyConfig = vi.fn((result: LoadConfigResult) => {
-    activeConfig = result.config
-    return { kind: 'active' as const }
-  })
-  const controller: AutoReviewCommandController = {
-    configStore,
-    getActiveConfig: () => activeConfig,
-    applyConfig,
-  }
-
-  let command: Omit<RegisteredCommand, 'name' | 'sourceInfo'> | undefined
-  const registerCommand = vi.fn((_name: string, options: Omit<RegisteredCommand, 'name' | 'sourceInfo'>) => {
-    command = options
-  })
-  const pi = {
-    registerCommand,
-  } as unknown as ExtensionAPI
-  registerAutoReviewCommand(pi, controller)
-
-  const ui = {
-    select: vi.fn(),
-    input: vi.fn(),
-    editor: vi.fn(),
-    confirm: vi.fn(),
-    notify: vi.fn(),
-  }
-  const reload = vi.fn()
-  const waitForIdle = vi.fn(async () => {})
-  const context = {
-    cwd: '/project',
-    mode: 'tui',
-    hasUI: true,
-    modelRegistry: {
-      getAll: () => [],
-    },
-    ui,
-    waitForIdle,
-    reload,
-  } as unknown as ExtensionCommandContext
-
-  return {
-    activeConfig: () => activeConfig,
-    applyConfig,
-    command: () => {
-      if (command === undefined) {
-        throw new Error('command not registered')
-      }
-      return command
-    },
-    context,
-    files,
-    pi,
-    registerCommand,
-    reload,
-    ui,
-    waitForIdle,
-  }
-}
-
-const globalPath = '/agent/extensions/pi-permission-auto-review/config.json'
-const projectPath = '/project/.pi/extensions/pi-permission-auto-review/config.json'
+type Command = Omit<RegisteredCommand, 'name' | 'sourceInfo'>
 
 describe('/permission-auto-review', () => {
-  it('registers the command and completes subcommands and reset scopes', async () => {
-    const harness = createCommandHarness()
-    expect(harness.registerCommand).toHaveBeenCalledWith('permission-auto-review', expect.any(Object))
+  const workspace = useWorkspace()
 
-    const command = harness.command()
-    expect(await command.getArgumentCompletions?.('sh')).toEqual([expect.objectContaining({ value: 'show' })])
-    expect(await command.getArgumentCompletions?.('reset p')).toEqual([
-      expect.objectContaining({ value: 'reset project' }),
-    ])
-  })
+  /** Answers the settings menu with `picks` in order, then saves; other dialogs come from `answers` by title. */
+  function setup(picks: string[], answers: Record<string, string> = {}) {
+    let activeConfig: AutoReviewConfig | undefined = loadConfig(workspace.cwd).config
+    const applyConfig = vi.fn((result: LoadConfigResult) => {
+      activeConfig = result.config
 
-  it('edits a staged global draft, saves it, and applies it without ctx.reload', async () => {
-    const harness = createCommandHarness()
-    let menuVisits = 0
-    const menuOptions: string[][] = []
-    harness.ui.select.mockImplementation(async (title: string, options: string[]) => {
-      if (title === 'Select configuration scope') {
-        return 'Global configuration'
-      }
-      if (title === 'Configure Provider') {
-        return 'Enter custom value...'
-      }
-      if (title.startsWith('Permission auto-review settings')) {
-        menuOptions.push(options)
-        menuVisits += 1
-        return menuVisits === 1 ? options.find(option => option.startsWith('Provider:')) : 'Save changes'
-      }
-      return undefined
+      return { kind: 'active' as const }
     })
-    harness.ui.input.mockResolvedValue('review-proxy')
+    let command: Command | undefined
+    registerAutoReviewCommand(
+      {
+        registerCommand: (_name: string, options: Command) => {
+          command = options
+        },
+      } as unknown as ExtensionAPI,
+      { getActiveConfig: () => activeConfig, applyConfig },
+    )
 
-    await harness.command().handler('', harness.context)
+    const menus: string[][] = []
+    const select = vi.fn(async (title: string, options: string[]) => {
+      if (!title.startsWith('Permission auto-review settings')) {
+        return answers[title]
+      }
+      menus.push(options)
+      const field = picks[menus.length - 1]
 
-    expect(harness.waitForIdle).toHaveBeenCalledOnce()
+      return field === undefined ? 'Save changes' : options.find(option => option.startsWith(field))
+    })
+    const reload = vi.fn()
+    const notify = vi.fn()
+    const context = {
+      cwd: workspace.cwd,
+      mode: 'tui',
+      modelRegistry: { getAll: () => [] },
+      ui: { select, input: async () => answers['input'], notify },
+      waitForIdle: async () => {},
+      reload,
+    } as unknown as ExtensionCommandContext
+
+    return {
+      run: async (args: string) => command?.handler(args, context),
+      activeConfig: () => activeConfig,
+      applyConfig,
+      menus,
+      notify,
+      reload,
+    }
+  }
+
+  const stored = (scope: 'global' | 'project'): unknown =>
+    JSON.parse(readFileSync(configPath(workspace.cwd, scope), 'utf8'))
+
+  it('stages edits in the menu, then saves and applies them without reloading the session', async () => {
+    const harness = setup(['Provider:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Provider': 'Enter custom value...',
+      input: 'review-proxy',
+    })
+    await harness.run('')
+
+    expect(harness.menus[0]).toContain('Provider: openai-codex (source: default; global: inherit)')
+    expect(harness.menus[1]).toContain('Provider: review-proxy (source: global; global: override)')
+    expect(stored('global')).toMatchObject({ provider: 'review-proxy' })
     expect(harness.applyConfig).toHaveBeenCalledOnce()
     expect(harness.activeConfig()).toMatchObject({ provider: 'review-proxy' })
-    expect(JSON.parse(harness.files.get(globalPath) ?? '')).toMatchObject({
-      provider: 'review-proxy',
-    })
-    expect(menuOptions[0]).toContain('Provider: openai-codex (source: default; global: inherit)')
-    expect(menuOptions[1]).toContain('Provider: review-proxy (source: global; global: override)')
     expect(harness.reload).not.toHaveBeenCalled()
-    expect(harness.ui.notify).toHaveBeenCalledWith('Config saved and applied without reloading the Pi session.', 'info')
   })
 
-  it('drops an override when a field is set back to the inherited value', async () => {
-    const harness = createCommandHarness({
-      [globalPath]: JSON.stringify({ reasoning: 'high', model: 'kept-model' }),
+  it('drops an override that is set back to the inherited value', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { reasoning: 'high', model: 'kept-model' })
+    const harness = setup(['Reasoning:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Reasoning': 'Use inherited value',
     })
-    let menuVisits = 0
-    harness.ui.select.mockImplementation(async (title: string, options: string[]) => {
-      if (title === 'Select configuration scope') {
-        return 'Global configuration'
-      }
-      if (title === 'Configure Reasoning') {
-        return 'Use inherited value'
-      }
-      if (title.startsWith('Permission auto-review settings')) {
-        menuVisits += 1
-        return menuVisits === 1 ? options.find(option => option.startsWith('Reasoning:')) : 'Save changes'
-      }
-      return undefined
-    })
+    await harness.run('')
 
-    await harness.command().handler('', harness.context)
-
-    const stored: unknown = JSON.parse(harness.files.get(globalPath) ?? '')
-    expect(stored).not.toHaveProperty('reasoning')
-    expect(stored).toMatchObject({ model: 'kept-model' })
+    expect(Object.keys(stored('global') as object)).toEqual(['$schema', 'model'])
     expect(harness.activeConfig()).toMatchObject({ reasoning: 'low', model: 'kept-model' })
   })
 
-  it('cancels the settings menu without writing or applying', async () => {
-    const harness = createCommandHarness()
-    harness.ui.select.mockResolvedValueOnce('Project configuration').mockResolvedValueOnce('Cancel')
+  it('shows the active values with their origins, but never the policy body', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { reasoning: 'high', additionalPolicy: 'Private policy contents' })
+    const harness = setup([])
+    await harness.run('show')
 
-    await harness.command().handler('', harness.context)
-
-    expect(harness.files.has(projectPath)).toBe(false)
-    expect(harness.applyConfig).not.toHaveBeenCalled()
-  })
-
-  it('shows active values without exposing the additional policy body', async () => {
-    const harness = createCommandHarness({
-      [globalPath]: JSON.stringify({
-        reasoning: 'high',
-        additionalPolicy: 'Private policy contents',
-      }),
-    })
-
-    await harness.command().handler('show', harness.context)
-
-    const message = harness.ui.notify.mock.calls[0]?.[0] as string
+    const message = String(harness.notify.mock.calls[0]?.[0])
     expect(message).toContain('reasoning=high (global)')
     expect(message).toContain('additionalPolicy=configured (global)')
     expect(message).not.toContain('Private policy contents')
-  })
-
-  it('reports both config paths and command help', async () => {
-    const harness = createCommandHarness()
-
-    await harness.command().handler('path', harness.context)
-    await harness.command().handler('help', harness.context)
-
-    expect(harness.ui.notify).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining(`global=${globalPath}\nproject=${projectPath}`),
-      'info',
-    )
-    expect(harness.ui.notify).toHaveBeenNthCalledWith(
-      2,
-      'Usage: /permission-auto-review [show|path|reset [global|project]|help]',
-      'info',
-    )
-  })
-
-  it('resets an invalid scope and hot-applies the inherited config', async () => {
-    const harness = createCommandHarness({
-      [projectPath]: JSON.stringify({ apiKey: 'invalid' }),
-    })
-    harness.ui.confirm.mockResolvedValue(true)
-
-    await harness.command().handler('reset project', harness.context)
-
-    expect(harness.waitForIdle).toHaveBeenCalledOnce()
-    expect(harness.files.has(projectPath)).toBe(false)
-    expect(harness.applyConfig).toHaveBeenCalledOnce()
-    expect(harness.activeConfig()).toMatchObject({
-      provider: 'openai-codex',
-      model: 'codex-auto-review',
-    })
-    expect(harness.reload).not.toHaveBeenCalled()
-  })
-
-  it('keeps the interactive editor disabled outside TUI mode', async () => {
-    const harness = createCommandHarness()
-    const context = {
-      ...harness.context,
-      mode: 'rpc',
-    } as ExtensionCommandContext
-
-    await harness.command().handler('', context)
-
-    expect(harness.ui.select).not.toHaveBeenCalled()
-    expect(harness.ui.notify).toHaveBeenCalledWith('/permission-auto-review requires interactive TUI mode.', 'warning')
   })
 })

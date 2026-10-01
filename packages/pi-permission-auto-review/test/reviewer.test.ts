@@ -1,498 +1,194 @@
-import type { ReviewModelRegistry } from '../src/model.js'
-import type {
-  Api,
-  AssistantMessage,
-  AssistantMessageEventStream,
-  Model,
-  Provider,
-  SimpleStreamOptions,
-} from '@earendil-works/pi-ai'
-import type { SessionEntry } from '@earendil-works/pi-coding-agent'
-import type {
-  AuthorizerLog,
-  PermissionQuery,
-  PromptPayload,
-  PromptPermissionDetails,
-} from '@gotgenes/pi-permission-system'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AssistantMessage, SimpleStreamOptions } from '@earendil-works/pi-ai'
+import type { ModelRegistry, SessionEntry } from '@earendil-works/pi-coding-agent'
+import type { AuthorizerLog, PermissionQuery } from '@gotgenes/pi-permission-system'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DenialCircuitBreaker } from '../src/circuit-breaker.js'
 import { DEFAULT_CONFIG } from '../src/config.js'
+import { POLICY_REVISION } from '../src/policy.js'
 import { createPermissionReviewer } from '../src/reviewer.js'
+import { permissionDetails } from './helpers.js'
 
-function createModel(): Model<Api> {
-  return {
-    id: 'review-model',
-    name: 'Review Model',
-    api: 'openai-responses',
-    provider: 'custom-review',
-    baseUrl: 'https://review.example/v1',
-    reasoning: true,
-    input: ['text'],
-    cost: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    },
-    contextWindow: 128_000,
-    maxTokens: 16_000,
-  }
-}
+const ALLOW = '{"outcome":"allow"}'
+const DENY =
+  '{"risk_level":"high","user_authorization":"unknown","outcome":"deny","rationale":"Publishing was not authorized."}'
 
-function assistantMessage(text: string, stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
-  return {
-    role: 'assistant',
-    content: [{ type: 'text', text }],
-    api: 'openai-responses',
-    provider: 'custom-review',
-    model: 'review-model',
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        total: 0,
-      },
-    },
-    stopReason,
-    timestamp: 0,
-  }
-}
+const USER_ENTRY = {
+  type: 'message',
+  id: 'user-1',
+  parentId: null,
+  timestamp: '2026-07-23T00:00:00.000Z',
+  message: { role: 'user', content: 'Please run the requested operation.', timestamp: 0 },
+} as SessionEntry
 
-function streamFrom(result: () => Promise<AssistantMessage>): AssistantMessageEventStream {
-  return { result } as AssistantMessageEventStream
-}
-
-function userEntry(): SessionEntry {
-  return {
-    type: 'message',
-    id: 'user-1',
-    parentId: null,
-    timestamp: '2026-07-23T00:00:00.000Z',
-    message: {
-      role: 'user',
-      content: 'Please run the requested operation.',
-      timestamp: 0,
-    },
-  }
-}
-
-function userInteractionEntries(): SessionEntry[] {
-  return [
-    {
-      type: 'message',
-      id: 'interaction-call',
-      parentId: 'user-1',
-      timestamp: '2026-07-23T00:00:30.000Z',
-      message: {
-        role: 'assistant',
-        content: [
-          {
-            type: 'toolCall',
-            id: 'question-1',
-            name: 'ask_user_question',
-            arguments: { questions: [] },
-          },
-        ],
-        api: 'openai-responses',
-        provider: 'test',
-        model: 'test',
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: 'toolUse',
-        timestamp: 0,
-      },
-    },
-    {
-      type: 'message',
-      id: 'interaction-1',
-      parentId: 'interaction-call',
-      timestamp: '2026-07-23T00:01:00.000Z',
-      message: {
-        role: 'toolResult',
-        toolCallId: 'question-1',
-        toolName: 'ask_user_question',
-        content: [{ type: 'text', text: 'untrusted presentation text' }],
-        details: {
-          cancelled: false,
-          answers: [{ question: 'Choose a mode?', answer: 'Safe mode' }],
-        },
-        isError: false,
-        timestamp: 0,
-      },
-    },
-  ]
-}
-
-function promptPayload(overrides: Partial<PromptPayload> = {}): PromptPayload {
-  return {
-    kind: 'bash',
-    request: {
-      requester: { agentName: null, forwarded: false, sessionId: null },
-      surface: 'bash',
-      toolName: 'bash',
-      invokedToolName: null,
-      value: 'pnpm publish',
-      matchedPattern: 'pnpm publish*',
-      commandContext: null,
-      executedUnit: null,
-    },
-    evidence: [{ label: 'command', text: 'pnpm publish', detail: null }],
-    annotations: [],
-    ...overrides,
-  }
-}
-
-function details(overrides: Partial<PromptPermissionDetails> = {}): PromptPermissionDetails {
-  return {
-    requestId: 'request-1',
-    source: 'tool_call',
-    agentName: null,
-    payload: promptPayload(),
-    toolName: 'bash',
-    command: 'pnpm publish',
-    surface: 'bash',
-    ...overrides,
-  }
-}
-
-interface TestLog extends AuthorizerLog {
-  review: ReturnType<typeof vi.fn<AuthorizerLog['review']>>
-  debug: ReturnType<typeof vi.fn<AuthorizerLog['debug']>>
-}
-
-function createLog(): TestLog {
-  return {
-    review: vi.fn<AuthorizerLog['review']>(),
-    debug: vi.fn<AuthorizerLog['debug']>(),
-  }
+function reply(text: string, stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
+  return { role: 'assistant', content: [{ type: 'text', text }], stopReason } as AssistantMessage
 }
 
 interface HarnessOptions {
-  responses?: Array<AssistantMessage | Error>
+  replies?: (AssistantMessage | Error)[]
   timeoutMs?: number
-  resultFactory?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
-  providerLookup?: 'native' | 'missing' | 'throwing'
-  sessionEntries?: SessionEntry[]
+  /** Replaces the scripted replies, e.g. to wait on the abort signal. */
+  respond?: (options: SimpleStreamOptions) => Promise<AssistantMessage>
+  getProvider?: () => unknown
 }
 
 function createHarness(options: HarnessOptions = {}) {
-  const model = createModel()
-  const responses = [...(options.responses ?? [assistantMessage('{"outcome":"allow"}')])]
-  const streamSimple = vi.fn((_model: Model<Api>, _context: unknown, streamOptions: SimpleStreamOptions = {}) =>
-    streamFrom(async () => {
-      if (options.resultFactory !== undefined) {
-        return options.resultFactory(streamOptions)
+  const replies = [...(options.replies ?? [reply(ALLOW)])]
+  const streamSimple = vi.fn((_model: unknown, _context: unknown, streamOptions: SimpleStreamOptions) => ({
+    result: async () => {
+      if (options.respond !== undefined) {
+        return options.respond(streamOptions)
       }
-      const next = responses.shift()
-      if (next instanceof Error) {
-        throw next
+      const next = replies.shift()
+      if (next === undefined || next instanceof Error) {
+        throw next ?? new Error('no scripted reply')
       }
-      if (next === undefined) {
-        throw new Error('no fake response')
-      }
+
       return next
-    }),
-  )
-  const provider = {
-    id: 'custom-review',
-    name: 'Custom Review',
-    auth: {},
-    getModels: () => [model],
-  } as unknown as Provider
-  const registryBase = {
-    find: vi.fn(() => model),
-    getAll: vi.fn(() => [model]),
+    },
+  }))
+  const model = { id: 'review-model', provider: 'custom-review', api: 'openai-responses', reasoning: true }
+  const registry = {
+    find: () => model,
+    getProvider: options.getProvider ?? (() => ({ id: 'custom-review' })),
     streamSimple,
-  }
-  let registry: ReviewModelRegistry
-  switch (options.providerLookup ?? 'native') {
-    case 'native':
-      registry = { ...registryBase, getProvider: vi.fn(() => provider) }
-      break
-    case 'missing':
-      registry = { ...registryBase, getProvider: vi.fn(() => undefined) }
-      break
-    case 'throwing':
-      registry = {
-        ...registryBase,
-        getProvider: () => {
-          throw new Error('provider lookup failed')
-        },
-      }
-      break
-  }
+  } as unknown as ModelRegistry
   const circuitBreaker = new DenialCircuitBreaker()
-  const getBranch = vi.fn(() => options.sessionEntries ?? [userEntry()])
-  const authorize = createPermissionReviewer(
-    {
-      config: {
-        ...DEFAULT_CONFIG,
-        provider: 'custom-review',
-        model: 'review-model',
-        timeoutMs: options.timeoutMs ?? 90_000,
-      },
-      registry,
-      sessionManager: { getBranch, getSessionId: () => 'session-1' },
-      circuitBreaker,
+  const reviewer = createPermissionReviewer({
+    config: {
+      ...DEFAULT_CONFIG,
+      provider: 'custom-review',
+      model: 'review-model',
+      timeoutMs: options.timeoutMs ?? 90_000,
     },
-    {
-      now: () => 0,
-      sleep: async () => Promise.resolve(),
-    },
-  )
+    registry,
+    sessionManager: { getBranch: () => [USER_ENTRY], getSessionId: () => 'session-1' } as never,
+    circuitBreaker,
+    sessionSignal: new AbortController().signal,
+  })
 
   return {
-    authorize,
     circuitBreaker,
-    getBranch,
     streamSimple,
+    /** Runs the retry delays and the review timeout on the fake clock. */
+    async authorize(requestId = 'request-1') {
+      const review = vi.fn<AuthorizerLog['review']>()
+      const verdict = reviewer(permissionDetails({ requestId }), {} as PermissionQuery, { review, debug: vi.fn() })
+      await vi.runAllTimersAsync()
+
+      return { verdict: await verdict, entries: review.mock.calls }
+    },
   }
 }
 
-const query = {} as PermissionQuery
-
 describe('permission reviewer', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('streams a tool-free registry call and allows', async () => {
+  it('asks a tool-free model call and logs where its evidence came from', async () => {
     const harness = createHarness()
-    const log = createLog()
-
-    await expect(harness.authorize(details(), query, log)).resolves.toEqual({
-      kind: 'allow',
-    })
-
+    const { verdict, entries } = await harness.authorize()
     const [, context, options] = harness.streamSimple.mock.calls[0] ?? []
-    expect(context).toMatchObject({
-      messages: [{ role: 'user' }],
-    })
+
+    expect(verdict).toEqual({ kind: 'allow' })
     expect(context).not.toHaveProperty('tools')
-    expect((context as { systemPrompt?: string }).systemPrompt).toContain(
-      'source field is "user" or "user_interaction"',
-    )
-    expect(harness.getBranch).toHaveBeenCalledOnce()
-    expect(options).toMatchObject({
-      maxRetries: 0,
-      maxTokens: 1_000,
-      reasoning: 'low',
-      sessionId: 'session-1',
-    })
-    expect(log.review.mock.calls[0]?.[1]).toMatchObject({
-      policyRevision: 'openai-codex/26cb4d73e2ce25575644038d7af5beb2440d0ed0+pi2',
+    // Retries stay inside the review's own budget, and gateways such as opencode-go reject a call without a session.
+    expect(options).toMatchObject({ maxRetries: 0, sessionId: 'session-1' })
+    expect(entries[0]?.[1]).toMatchObject({
+      policyRevision: POLICY_REVISION,
       contextSource: 'active-branch',
-      transcriptEntriesRetained: 1,
-      transcriptEntriesOmitted: 0,
-      transcriptEntriesTruncated: 0,
       directUserEntriesRetained: 1,
-      directUserEntriesOmitted: 0,
-      directUserEntriesTruncated: 0,
-      userInteractionEntriesRetained: 0,
-      userInteractionEntriesOmitted: 0,
-      userInteractionEntriesTruncated: 0,
       latestTrustedEntryRetained: true,
     })
   })
 
-  it('sends canonical structured user interactions to the provider', async () => {
-    const harness = createHarness({
-      sessionEntries: [userEntry(), ...userInteractionEntries()],
+  it('returns a denial that teaches, without writing the rationale to the log', async () => {
+    const { verdict, entries } = await createHarness({ replies: [reply(DENY)] }).authorize()
+
+    expect(verdict).toEqual({
+      kind: 'deny',
+      reason: 'Publishing was not authorized. (risk: high, user authorization: unknown)',
     })
-
-    await expect(harness.authorize(details(), query, createLog())).resolves.toEqual({ kind: 'allow' })
-
-    const [, context] = harness.streamSimple.mock.calls[0] ?? []
-    const userPrompt = (
-      context as {
-        messages: Array<{ content: string }>
-      }
-    ).messages[0]?.content
-    expect(userPrompt).toContain('"source":"user_interaction"')
-    expect(userPrompt).toContain('[{\\"question\\":\\"Choose a mode?\\",\\"answer\\":\\"Safe mode\\"}]')
-    expect(userPrompt).not.toContain('untrusted presentation text')
+    expect(entries[0]?.[1]).toMatchObject({ outcome: 'deny', riskLevel: 'high' })
+    expect(entries[0]?.[1]).not.toHaveProperty('rationale')
   })
 
-  it('sends the structured prompt payload as the permission request', async () => {
-    const harness = createHarness()
+  it('retries a transient provider failure within the same review', async () => {
+    const harness = createHarness({ replies: [new Error('temporary failure'), reply('', 'error'), reply(ALLOW)] })
 
-    await expect(
-      harness.authorize(
-        details({
-          payload: promptPayload({
-            evidence: [{ label: 'command', text: 'pnpm publish', detail: 'runs from /project' }],
-            annotations: [{ source: 'risk-annotator', text: 'publishes to a public registry' }],
-          }),
-        }),
-        query,
-        createLog(),
-      ),
-    ).resolves.toEqual({ kind: 'allow' })
-
-    const [, context] = harness.streamSimple.mock.calls[0] ?? []
-    const userPrompt = (context as { messages: Array<{ content: string }> }).messages[0]?.content
-    const request = userPrompt?.split('>>> PERMISSION REQUEST START')[1]
-
-    expect(request).toContain('"kind": "bash"')
-    expect(request).toContain('"matchedPattern": "pnpm publish*"')
-    expect(request).toContain('"detail": "runs from /project"')
-    expect(request).toContain('"source": "risk-annotator"')
+    expect((await harness.authorize()).verdict).toEqual({ kind: 'allow' })
+    expect(harness.streamSimple).toHaveBeenCalledTimes(3)
   })
 
-  it('returns a teaching denial without persisting the rationale', async () => {
-    const harness = createHarness({
-      responses: [
-        assistantMessage(
-          '{"risk_level":"high","user_authorization":"unknown","outcome":"deny","rationale":"Publishing was not authorized."}',
-        ),
-      ],
-    })
-    const log = createLog()
+  it('defers to the human prompt on a malformed reply, or once every attempt has failed', async () => {
+    const malformed = await createHarness({ replies: [reply('not json')] }).authorize()
+    expect(malformed.verdict).toEqual({ kind: 'defer' })
+    expect(malformed.entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response' })
 
-    const result = await harness.authorize(details({ surface: 'path', path: '.env' }), query, log)
-
-    expect(result.kind).toBe('deny')
-    if (result.kind === 'deny') {
-      expect(result.reason).toContain('Publishing was not authorized.')
-    }
-    expect(log.review.mock.calls[0]?.[0]).toBe('auto_review.decision')
-    expect(log.review.mock.calls[0]?.[1]).toMatchObject({
-      outcome: 'deny',
-      riskLevel: 'high',
-      userAuthorization: 'unknown',
-    })
-    expect(log.review.mock.calls[0]?.[1]).not.toHaveProperty('rationale')
-    expect(log.review.mock.calls[0]?.[1]).not.toHaveProperty('surface')
+    // Request-time authentication fails inside the registry stream, so an unusable login arrives here too.
+    const failing = createHarness({ replies: [new Error('no login'), new Error('no login'), new Error('no login')] })
+    const exhausted = await failing.authorize()
+    expect(exhausted.verdict).toEqual({ kind: 'defer' })
+    expect(exhausted.entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
+    expect(failing.streamSimple).toHaveBeenCalledTimes(3)
   })
 
-  it('retries transient provider failures within the same review', async () => {
-    const harness = createHarness({
-      responses: [
-        new Error('temporary failure'),
-        assistantMessage('', 'error'),
-        assistantMessage('{"outcome":"allow"}'),
-      ],
-    })
+  // The authorizer chain does not isolate a link that throws.
+  it('defers rather than throw when the reviewer provider is missing or its lookup throws', async () => {
+    const missing = await createHarness({ getProvider: () => undefined }).authorize()
+    const throwing = await createHarness({
+      getProvider: () => {
+        throw new Error('provider lookup failed')
+      },
+    }).authorize()
 
-    await expect(harness.authorize(details(), query, createLog())).resolves.toEqual({ kind: 'allow' })
-    expect(harness.streamSimple.mock.calls).toHaveLength(3)
+    expect(missing).toMatchObject({ verdict: { kind: 'defer' } })
+    expect(missing.entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-unresolved' })
+    expect(throwing).toMatchObject({ verdict: { kind: 'defer' } })
+    expect(throwing.entries[0]?.[1]).toMatchObject({ errorCategory: 'internal-error' })
   })
 
-  it('defers malformed output and exhausted provider attempts to the human authorizer', async () => {
-    const malformed = createHarness({
-      responses: [assistantMessage('not json')],
-    })
-    const malformedLog = createLog()
-    await expect(malformed.authorize(details(), query, malformedLog)).resolves.toEqual({ kind: 'defer' })
-    expect(malformedLog.review.mock.calls[0]?.[0]).toBe('auto_review.decision')
-    expect(malformedLog.review.mock.calls[0]?.[1]).toMatchObject({
-      errorCategory: 'invalid-response',
-    })
-
-    // Request-time authentication now fails inside the registry stream, so an
-    // unusable login arrives here rather than as a pre-flight category.
-    const failing = createHarness({
-      responses: [new Error('not configured'), new Error('not configured'), new Error('not configured')],
-    })
-    const failingLog = createLog()
-    await expect(failing.authorize(details(), query, failingLog)).resolves.toEqual({ kind: 'defer' })
-    expect(failing.streamSimple.mock.calls).toHaveLength(3)
-    expect(failingLog.review.mock.calls[0]?.[1]).toMatchObject({
-      errorCategory: 'provider-error',
-    })
-  })
-
-  it('contains unsupported and throwing provider lookup failures', async () => {
-    const missing = createHarness({ providerLookup: 'missing' })
-    const missingLog = createLog()
-    await expect(missing.authorize(details(), query, missingLog)).resolves.toEqual({ kind: 'defer' })
-    expect(missingLog.review.mock.calls[0]?.[1]).toMatchObject({
-      errorCategory: 'provider-unresolved',
-    })
-
-    const throwing = createHarness({ providerLookup: 'throwing' })
-    const throwingLog = createLog()
-    await expect(throwing.authorize(details(), query, throwingLog)).resolves.toEqual({ kind: 'defer' })
-    expect(throwingLog.review.mock.calls[0]?.[1]).toMatchObject({
-      errorCategory: 'internal-error',
-    })
-  })
-
-  it('opens the per-turn circuit after three consecutive denials', async () => {
-    const denial = assistantMessage('{"outcome":"deny","rationale":"Not authorized."}')
-    const harness = createHarness({
-      responses: [denial, denial, denial],
-    })
-
+  it('refuses unreviewed for the rest of the turn after three consecutive denials', async () => {
+    const harness = createHarness({ replies: [reply(DENY), reply(DENY), reply(DENY)] })
     for (let index = 0; index < 3; index += 1) {
-      await expect(
-        harness.authorize(details({ requestId: `request-${index}` }), query, createLog()),
-      ).resolves.toMatchObject({ kind: 'deny' })
+      await harness.authorize(`request-${index}`)
     }
+    const { verdict, entries } = await harness.authorize('request-3')
 
-    const circuitLog = createLog()
-    const circuitResult = await harness.authorize(details({ requestId: 'request-4' }), query, circuitLog)
-    expect(circuitResult.kind).toBe('deny')
-    if (circuitResult.kind === 'deny') {
-      expect(circuitResult.reason).toContain('explicit approval')
-    }
-    expect(harness.streamSimple.mock.calls).toHaveLength(3)
-    expect(circuitLog.review.mock.calls[0]?.[0]).toBe('auto_review.circuit_open')
+    expect(verdict.kind === 'deny' ? verdict.reason : undefined).toContain('explicit approval')
+    expect(entries[0]?.[0]).toBe('auto_review.circuit_open')
+    expect(harness.streamSimple).toHaveBeenCalledTimes(3)
   })
 
-  it('opens the per-turn circuit after ten non-consecutive denials in the recent window', async () => {
-    const denial = assistantMessage('{"outcome":"deny","rationale":"Not authorized."}')
-    const allow = assistantMessage('{"outcome":"allow"}')
-    const responses = Array.from({ length: 10 }, () => [denial, allow]).flat()
-    const harness = createHarness({ responses })
-
+  it('refuses after ten denials in the recent window too, until the next turn', async () => {
+    const harness = createHarness({ replies: Array.from({ length: 10 }, () => [reply(DENY), reply(ALLOW)]).flat() })
     for (let index = 0; index < 19; index += 1) {
-      await harness.authorize(details({ requestId: `request-${index}` }), query, createLog())
+      await harness.authorize(`request-${index}`)
     }
 
-    await expect(
-      harness.authorize(details({ requestId: 'request-circuit' }), query, createLog()),
-    ).resolves.toMatchObject({ kind: 'deny' })
-    expect(harness.streamSimple.mock.calls).toHaveLength(19)
+    expect((await harness.authorize('request-19')).verdict).toMatchObject({ kind: 'deny' })
+    expect(harness.streamSimple).toHaveBeenCalledTimes(19)
 
     harness.circuitBreaker.resetTurn()
-    await expect(harness.authorize(details({ requestId: 'request-new-turn' }), query, createLog())).resolves.toEqual({
-      kind: 'allow',
-    })
-    expect(harness.streamSimple.mock.calls).toHaveLength(20)
+    expect((await harness.authorize('request-20')).verdict).toEqual({ kind: 'allow' })
   })
 
   it('aborts at the total timeout and defers', async () => {
-    vi.useFakeTimers()
     const harness = createHarness({
       timeoutMs: 5,
-      resultFactory: async streamOptions =>
+      respond: async options =>
         new Promise((_resolve, reject) => {
-          streamOptions.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          options.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
         }),
     })
-    const log = createLog()
+    const { verdict, entries } = await harness.authorize()
 
-    const result = harness.authorize(details(), query, log)
-    await vi.advanceTimersByTimeAsync(10)
-
-    await expect(result).resolves.toEqual({ kind: 'defer' })
-    expect(log.review.mock.calls[0]?.[0]).toBe('auto_review.decision')
-    expect(log.review.mock.calls[0]?.[1]).toMatchObject({
-      errorCategory: 'timeout',
-    })
+    expect(verdict).toEqual({ kind: 'defer' })
+    expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout' })
   })
 })

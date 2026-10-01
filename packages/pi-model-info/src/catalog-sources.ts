@@ -7,17 +7,14 @@ import type {
   NormalizedSource,
   ThinkingLevelMapInput,
 } from './types.js'
-import { compact } from './compact.js'
 import { THINKING_LEVELS } from './types.js'
-
-export const PI_DEV_URL = 'https://pi.dev/api/models'
-export const MODELS_DEV_URL = 'https://models.dev/models.json'
+import { compact } from './util.js'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Remote JSON delivers `__proto__` and friends as ordinary own keys; dropping them keeps them out of index keys. */
+/** Remote JSON delivers `__proto__` and friends as ordinary own keys, which have no business in an index. */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 function entriesOf(value: unknown): [string, unknown][] {
@@ -125,7 +122,7 @@ function toTiers(raw: Record<string, unknown>): ModelCostTier[] | undefined {
     return tiers.length > 0 ? tiers : undefined
   }
 
-  // `context_over_200k` is models.dev's deprecated single-tier spelling, duplicating `tiers[0]` when both are present.
+  // models.dev's deprecated single-tier spelling, which duplicates `tiers[0]` when both are present.
   const legacy = toTier(raw['context_over_200k'], 200_000)
 
   return legacy === undefined ? undefined : [legacy]
@@ -149,9 +146,8 @@ function toThinkingLevelMap(raw: unknown): ThinkingLevelMapInput | undefined {
 }
 
 /**
- * models.dev describes reasoning as options rather than a level map. Only the `effort` form maps to
- * the strings Pi sends; `toggle` and `budget_tokens` carry no level names, and inventing one is a
- * 400 on every turn.
+ * Only the `effort` option maps to the strings Pi sends; `toggle` and `budget_tokens` carry no level names, and
+ * inventing one is a 400 on every turn.
  */
 function reasoningOptionsToThinkingLevelMap(raw: unknown): ThinkingLevelMapInput | undefined {
   if (!Array.isArray(raw)) {

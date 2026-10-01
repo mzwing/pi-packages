@@ -1,7 +1,4 @@
-/**
- * Ranking of OpenAI first-party coding slugs. A convenience, never the source of truth:
- * anything missing is treated as unrecorded, never as fine.
- */
+/** A convenience, never the source of truth: an unranked slug is unrecorded, never fine. */
 const MODEL_TIERS: Record<string, number> = {
   'gpt-6-astra': 100,
   'gpt-6.1-sol': 96,
@@ -17,7 +14,6 @@ const MODEL_TIERS: Record<string, number> = {
   'gpt-5.2': 15,
 }
 
-/** Only OpenAI slugs are named. Everything else is one bucket, reported by its raw id. */
 const OPENAI_PREFIXES = [
   'gpt-',
   'gpt3',
@@ -34,10 +30,9 @@ const OPENAI_PREFIXES = [
   'babbage',
 ]
 
-/** OpenAI's model classes, smallest first. The class orders two slugs before their version does. */
+/** Smallest first. The class orders two OpenAI slugs before their version does. */
 const OPENAI_CLASSES = ['luna', 'terra', 'sol', 'astra']
 
-/** Tokens marking a deliberately smaller or cheaper sibling. */
 const SMALL_MODEL_MARKERS = new Set([
   'mini',
   'nano',
@@ -55,116 +50,55 @@ const SMALL_MODEL_MARKERS = new Set([
   'haiku',
 ])
 
-/** Tokens marking the larger sibling, so a bigger model is not called a downgrade. */
 const LARGE_MODEL_MARKERS = new Set(['pro', 'max', 'ultra', 'opus', 'large', 'heavy', 'xl'])
 
 // '5.6' -> [5, 6]; '4o' -> [4] plus a trailing variant token 'o'.
 const VERSION_TOKEN = /^v?(\d+(?:\.\d+)*)([a-z]*)$/
 const SLUG_SPLIT = /[-_/:\s]+/
-const LEADING_SEPARATORS = /^[-_]+/
 
-type IdentitySource = 'config' | 'builtin' | 'registry' | 'inferred'
-
-export interface SlugShape {
-  vendor: 'openai' | 'other' | undefined
+export interface ModelIdentity {
+  /** Trimmed and lowercased slug. */
+  key: string
+  vendor: 'openai' | 'other'
   family: string | undefined
-  line: string | undefined
   version: number[]
   variant: string | undefined
   sizeMarker: string | undefined
   largeMarker: string | undefined
-  /** Index into `OPENAI_CLASSES`, for an OpenAI slug that names one. */
+  /** Index into `OPENAI_CLASSES`. */
   classRank: number | undefined
-}
-
-export interface ModelIdentity extends SlugShape {
-  slug: string
-  normalized: string
   known: boolean
-  source: IdentitySource
-  /** Recorded slug this one extends, if any. */
+  /** The recorded slug this one is, or extends with a server-side suffix. */
   base: string | undefined
-  /** Server-side suffix beyond that base. */
-  suffix: string | undefined
   tier: number | undefined
 }
 
-export interface IdentityResolver {
-  identify: (slug: string | undefined) => ModelIdentity | undefined
-}
+export type IdentifyModel = (slug: string) => ModelIdentity
 
-export interface IdentityResolverOptions {
-  /** `slug -> rank` from user config, outranking the built-in table. */
-  tiers?: Record<string, number> | undefined
-  /** Slugs the provider can actually offer, from Pi's model registry. */
-  registrySlugs?: readonly string[] | undefined
-}
+type SlugShape = Pick<
+  ModelIdentity,
+  'vendor' | 'family' | 'version' | 'variant' | 'sizeMarker' | 'largeMarker' | 'classRank'
+>
 
-/**
- * Takes a model slug apart without needing it to be recorded anywhere, so an unrecorded model
- * stays comparable: 'gpt-5.7-mini' parses as openai, family gpt, version [5, 7], marker 'mini'.
- */
-export function parseSlug(slug: string): SlugShape {
-  const key = slug.trim().toLowerCase()
-  const shape: SlugShape = {
-    vendor: undefined,
-    family: undefined,
-    line: undefined,
-    version: [],
-    variant: undefined,
-    sizeMarker: undefined,
-    largeMarker: undefined,
-    classRank: undefined,
+/** 'gpt-5.7-mini' parses as openai, family gpt, version [5, 7], marker 'mini' without being recorded anywhere. */
+function parseSlug(slug: string): SlugShape {
+  const vendor = OPENAI_PREFIXES.some(prefix => slug.startsWith(prefix)) ? 'openai' : 'other'
+  const [family, ...rest] = slug.split(SLUG_SPLIT).filter(token => token.length > 0)
+  const versionAt = rest.findIndex(token => VERSION_TOKEN.test(token))
+  const [, digits, suffix] = VERSION_TOKEN.exec(rest[versionAt] ?? '') ?? []
+  const tail = versionAt < 0 ? rest : [suffix ?? '', ...rest.slice(versionAt + 1)].filter(token => token !== '')
+  const openaiClass = vendor === 'openai' ? rest.find(token => OPENAI_CLASSES.includes(token)) : undefined
+
+  return {
+    vendor,
+    family,
+    version: digits === undefined ? [] : digits.split('.').map(Number),
+    variant: tail.length > 0 ? tail.join('-') : undefined,
+    // Markers sit mid-slug too ('claude-opus-5'), not only in the tail.
+    sizeMarker: rest.find(token => SMALL_MODEL_MARKERS.has(token)),
+    largeMarker: rest.find(token => LARGE_MODEL_MARKERS.has(token)),
+    classRank: openaiClass === undefined ? undefined : OPENAI_CLASSES.indexOf(openaiClass),
   }
-  if (key.length === 0) {
-    return shape
-  }
-
-  shape.vendor = OPENAI_PREFIXES.some(prefix => key.startsWith(prefix)) ? 'openai' : 'other'
-
-  const tokens = key.split(SLUG_SPLIT).filter(token => token.length > 0)
-  const family = tokens[0]
-  if (family === undefined) {
-    return shape
-  }
-  shape.family = family
-
-  let versionAt: number | undefined
-  let versionSuffix = ''
-  for (let index = 1; index < tokens.length; index += 1) {
-    const match = VERSION_TOKEN.exec(tokens[index] ?? '')
-    if (match?.[1] === undefined) {
-      continue
-    }
-    shape.version = match[1].split('.').map(Number)
-    versionSuffix = match[2] ?? ''
-    versionAt = index
-    break
-  }
-
-  const tail =
-    versionAt === undefined
-      ? tokens.slice(1)
-      : [...(versionSuffix.length > 0 ? [versionSuffix] : []), ...tokens.slice(versionAt + 1)]
-  shape.line = (versionAt === undefined ? tokens : tokens.slice(0, versionAt)).join('-')
-  shape.variant = tail.length > 0 ? tail.join('-') : undefined
-
-  // Every token after the family name: size markers live in the tail ('gpt-5.4-mini')
-  // but also mid-slug ('claude-opus-5').
-  for (const token of tokens.slice(1)) {
-    if (shape.sizeMarker === undefined && SMALL_MODEL_MARKERS.has(token)) {
-      shape.sizeMarker = token
-    }
-    if (shape.largeMarker === undefined && LARGE_MODEL_MARKERS.has(token)) {
-      shape.largeMarker = token
-    }
-    const classRank = OPENAI_CLASSES.indexOf(token)
-    if (shape.classRank === undefined && classRank >= 0 && shape.vendor === 'openai') {
-      shape.classRank = classRank
-    }
-  }
-
-  return shape
 }
 
 /** Negative when `left` is older, positive when newer, zero when equal. */
@@ -180,78 +114,26 @@ export function compareVersions(left: number[], right: number[]): number {
 }
 
 /**
- * Resolves 'what is this slug?' from the configured ranks, the built-in table, then the slugs
- * Pi's registry says the provider offers, then structural inference — so an unrecorded model is
- * judged rather than waved through.
+ * Resolves a slug against the configured ranks, the built-in table and the slugs Pi's registry offers,
+ * then falls back to its shape, so an unrecorded model is still judged rather than waved through.
  */
-export function createIdentityResolver(options: IdentityResolverOptions = {}): IdentityResolver {
-  const configTiers = options.tiers ?? {}
-  const registrySlugs = new Set((options.registrySlugs ?? []).map(slug => slug.trim().toLowerCase()))
-  const recorded = [...new Set([...Object.keys(configTiers), ...Object.keys(MODEL_TIERS), ...registrySlugs])].sort(
-    (a, b) => b.length - a.length,
-  )
-  const cache = new Map<string, ModelIdentity>()
+export function createIdentityResolver(tiers: Record<string, number>, registrySlugs: readonly string[]): IdentifyModel {
+  const ranks = new Map(Object.entries({ ...MODEL_TIERS, ...tiers }))
+  const recorded = new Set([...ranks.keys(), ...registrySlugs.map(slug => slug.trim().toLowerCase())])
+  const longestFirst = [...recorded].sort((left, right) => right.length - left.length)
 
-  function sourceOf(slug: string): IdentitySource | undefined {
-    if (configTiers[slug] !== undefined) {
-      return 'config'
-    }
-    if (MODEL_TIERS[slug] !== undefined) {
-      return 'builtin'
-    }
-
-    return registrySlugs.has(slug) ? 'registry' : undefined
-  }
-
-  /** Exact match first, then longest recorded prefix, so a server-side suffix still resolves. */
-  function matchRecorded(key: string): string | undefined {
-    if (sourceOf(key) !== undefined) {
-      return key
-    }
-
-    return recorded.find(base => key.startsWith(base) && key.length > base.length && '-_'.includes(key[base.length]!))
-  }
-
-  function lookupTier(key: string, base: string | undefined): number | undefined {
-    for (const candidate of base === undefined || base === key ? [key] : [key, base]) {
-      const tier = configTiers[candidate] ?? MODEL_TIERS[candidate]
-      if (tier !== undefined) {
-        return tier
-      }
-    }
-
-    return undefined
-  }
-
-  function identify(slug: string | undefined): ModelIdentity | undefined {
-    if (slug === undefined || slug.trim().length === 0) {
-      return undefined
-    }
+  return slug => {
     const key = slug.trim().toLowerCase()
-    const cached = cache.get(key)
-    if (cached !== undefined) {
-      return cached
-    }
+    const base = recorded.has(key)
+      ? key
+      : longestFirst.find(candidate => key.startsWith(`${candidate}-`) || key.startsWith(`${candidate}_`))
 
-    const base = matchRecorded(key)
-    const shape = parseSlug(base ?? key)
-    const identity: ModelIdentity = {
-      ...shape,
-      tier: lookupTier(key, base),
-      slug: slug.trim(),
-      normalized: key,
+    return {
+      ...parseSlug(base ?? key),
+      key,
       known: base !== undefined,
-      source: (base === undefined ? undefined : sourceOf(base)) ?? 'inferred',
       base,
-      suffix:
-        base !== undefined && key.length > base.length
-          ? key.slice(base.length).replace(LEADING_SEPARATORS, '')
-          : undefined,
+      tier: ranks.get(key) ?? (base === undefined ? undefined : ranks.get(base)),
     }
-    cache.set(key, identity)
-
-    return identity
   }
-
-  return { identify }
 }

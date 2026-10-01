@@ -1,219 +1,148 @@
-import type { AutoReviewConfigFile, AutoReviewConfigPaths, ConfigIssue, LoadConfigResult } from './config.js'
-import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import {
-  CONFIG_SCHEMA_URL,
-  defaultAutoReviewAgentDir,
-  getAutoReviewConfigPaths,
-  loadAutoReviewConfig,
-  parseAutoReviewConfigFile,
-  readConfigFile,
-  validateAutoReviewConfigFile,
-} from './config.js'
+import type { AutoReviewConfig, AutoReviewConfigFile } from './config.js'
+import { mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
+import { CONFIG_SCHEMA_URL, EXTENSION_ID, mergeConfig, parseConfigFile, validateConfigFile } from './config.js'
 
-export type AutoReviewConfigScope = 'global' | 'project'
+export type ConfigScope = 'global' | 'project'
 
-interface ScopeSnapshotBase {
-  scope: AutoReviewConfigScope
-  cwd: string
-  path: string
-  source: string | undefined
+export type ScopeSnapshot = { scope: ConfigScope; cwd: string; path: string; source: string | undefined } & (
+  | { valid: true; config: AutoReviewConfigFile }
+  | { valid: false; issue: string }
+)
+
+export interface LoadConfigResult {
+  config: AutoReviewConfig | undefined
+  issues: string[]
 }
-
-export type AutoReviewScopeSnapshot =
-  | (ScopeSnapshotBase & {
-      valid: true
-      config: AutoReviewConfigFile
-    })
-  | (ScopeSnapshotBase & {
-      valid: false
-      issue: ConfigIssue
-    })
 
 export type ConfigMutationResult = { ok: true; loadResult: LoadConfigResult } | { ok: false; message: string }
 
-export interface AutoReviewConfigFileSystem {
-  readFile: (path: string) => string | undefined
-  writeFile: (path: string, source: string) => void
-  rename: (sourcePath: string, destinationPath: string) => void
-  mkdir: (path: string) => void
-  unlink: (path: string) => void
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
-export interface AutoReviewConfigStoreOptions {
-  agentDir?: string
-  fileSystem?: AutoReviewConfigFileSystem
+export function configPath(cwd: string, scope: ConfigScope): string {
+  return scope === 'global'
+    ? join(getAgentDir(), 'extensions', EXTENSION_ID, 'config.json')
+    : join(cwd, '.pi', 'extensions', EXTENSION_ID, 'config.json')
 }
 
-const defaultFileSystem: AutoReviewConfigFileSystem = {
-  readFile: readConfigFile,
-  writeFile(path, source) {
-    writeFileSync(path, source, 'utf8')
-  },
-  rename(sourcePath, destinationPath) {
-    renameSync(sourcePath, destinationPath)
-  },
-  mkdir(path) {
-    mkdirSync(path, { recursive: true })
-  },
-  unlink(path) {
-    unlinkSync(path)
-  },
+function readSource(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined
+    }
+    throw error
+  }
 }
 
-function formatIssues(issues: ConfigIssue[]): string {
-  return issues.map(issue => `${issue.sourcePath}: ${issue.message}`).join('\n')
+export function readScope(cwd: string, scope: ConfigScope): ScopeSnapshot {
+  const path = configPath(cwd, scope)
+  let source: string | undefined
+  try {
+    source = readSource(path)
+  } catch (error) {
+    return { scope, cwd, path, source: undefined, valid: false, issue: describeError(error) }
+  }
+  if (source === undefined) {
+    return { scope, cwd, path, source, valid: true, config: {} }
+  }
+  const parsed = parseConfigFile(source)
+
+  return parsed.ok
+    ? { scope, cwd, path, source, valid: true, config: parsed.config }
+    : { scope, cwd, path, source, valid: false, issue: parsed.issue }
 }
 
-export class AutoReviewConfigStore {
-  private readonly agentDir: string
-  private readonly fileSystem: AutoReviewConfigFileSystem
+function merge(global: ScopeSnapshot, project: ScopeSnapshot): LoadConfigResult {
+  if (!global.valid || !project.valid) {
+    const issues = [global, project].flatMap(snapshot => (snapshot.valid ? [] : `${snapshot.path}: ${snapshot.issue}`))
 
-  constructor(options: AutoReviewConfigStoreOptions = {}) {
-    this.agentDir = options.agentDir ?? defaultAutoReviewAgentDir()
-    this.fileSystem = options.fileSystem ?? defaultFileSystem
+    return { config: undefined, issues }
+  }
+  const merged = mergeConfig(global.config, project.config)
+
+  return merged.ok
+    ? { config: merged.config, issues: [] }
+    : { config: undefined, issues: [`${project.path}: ${merged.issue}`] }
+}
+
+export function loadConfig(cwd: string): LoadConfigResult {
+  return merge(readScope(cwd, 'global'), readScope(cwd, 'project'))
+}
+
+function checkForConflict(snapshot: ScopeSnapshot): string | undefined {
+  let current: string | undefined
+  try {
+    current = readSource(snapshot.path)
+  } catch (error) {
+    return `Failed to re-read config at '${snapshot.path}': ${describeError(error)}`
   }
 
-  getPaths(cwd: string): AutoReviewConfigPaths {
-    return getAutoReviewConfigPaths(cwd, this.agentDir)
+  return current === snapshot.source
+    ? undefined
+    : `Config at '${snapshot.path}' changed while it was being edited; reopen the command and try again.`
+}
+
+export function saveScope(snapshot: ScopeSnapshot, draft: AutoReviewConfigFile): ConfigMutationResult {
+  if (!snapshot.valid) {
+    return { ok: false, message: `Cannot save invalid config at '${snapshot.path}': ${snapshot.issue}` }
+  }
+  const validated = validateConfigFile(draft)
+  if (!validated.ok) {
+    return { ok: false, message: `${snapshot.path}: ${validated.issue}` }
   }
 
-  load(cwd: string): LoadConfigResult {
-    return loadAutoReviewConfig({
-      cwd,
-      agentDir: this.agentDir,
-      readFile: path => this.fileSystem.readFile(path),
-    })
+  const { $schema = CONFIG_SCHEMA_URL, ...fields } = validated.config
+  const config = { $schema, ...fields }
+  const source = `${JSON.stringify(config, null, 2)}\n`
+  const replacement: ScopeSnapshot = { ...snapshot, source, config }
+  const other = readScope(snapshot.cwd, snapshot.scope === 'global' ? 'project' : 'global')
+  const loadResult = snapshot.scope === 'global' ? merge(replacement, other) : merge(other, replacement)
+  if (loadResult.config === undefined) {
+    return { ok: false, message: loadResult.issues.join('\n') }
+  }
+  const conflict = checkForConflict(snapshot)
+  if (conflict !== undefined) {
+    return { ok: false, message: conflict }
   }
 
-  readScope(cwd: string, scope: AutoReviewConfigScope): AutoReviewScopeSnapshot {
-    const paths = this.getPaths(cwd)
-    const path = scope === 'global' ? paths.globalPath : paths.projectPath
-    let source: string | undefined
+  const temporary = `${snapshot.path}.tmp`
+  try {
+    mkdirSync(dirname(snapshot.path), { recursive: true })
+    writeFileSync(temporary, source, 'utf8')
+    renameSync(temporary, snapshot.path)
+  } catch (error) {
     try {
-      source = this.fileSystem.readFile(path)
-    } catch (error) {
-      return {
-        scope,
-        cwd,
-        path,
-        source: undefined,
-        valid: false,
-        issue: {
-          sourcePath: path,
-          message: error instanceof Error ? error.message : String(error),
-        },
-      }
-    }
-
-    if (source === undefined) {
-      return { scope, cwd, path, source, valid: true, config: {} }
-    }
-
-    const parsed = parseAutoReviewConfigFile(source, path)
-    if (!parsed.ok) {
-      return { scope, cwd, path, source, valid: false, issue: parsed.issue }
-    }
-    return { scope, cwd, path, source, valid: true, config: parsed.config }
-  }
-
-  save(snapshot: AutoReviewScopeSnapshot, draft: AutoReviewConfigFile): ConfigMutationResult {
-    if (!snapshot.valid) {
-      return {
-        ok: false,
-        message: `Cannot save invalid config at '${snapshot.path}': ${snapshot.issue.message}`,
-      }
-    }
-
-    const parsed = validateAutoReviewConfigFile(draft, snapshot.path)
-    if (!parsed.ok) {
-      return { ok: false, message: `${parsed.issue.sourcePath}: ${parsed.issue.message}` }
-    }
-
-    const source = this.serialize(parsed.config)
-    const loadResult = this.loadWithOverride(snapshot, source)
-    if (loadResult.config === undefined) {
-      return { ok: false, message: formatIssues(loadResult.issues) }
-    }
-
-    const conflict = this.checkForConflict(snapshot)
-    if (conflict !== undefined) {
-      return { ok: false, message: conflict }
-    }
-
-    const tempPath = `${snapshot.path}.tmp`
-    try {
-      this.fileSystem.mkdir(dirname(snapshot.path))
-      this.fileSystem.writeFile(tempPath, source)
-      this.fileSystem.rename(tempPath, snapshot.path)
-    } catch (error) {
-      this.cleanupTempFile(tempPath)
-      return {
-        ok: false,
-        message: `Failed to save config at '${snapshot.path}': ${error instanceof Error ? error.message : String(error)}`,
-      }
-    }
-
-    return { ok: true, loadResult }
-  }
-
-  reset(snapshot: AutoReviewScopeSnapshot): ConfigMutationResult {
-    if (!snapshot.valid && snapshot.source === undefined) {
-      return {
-        ok: false,
-        message: `Cannot reset unreadable config at '${snapshot.path}': ${snapshot.issue.message}`,
-      }
-    }
-
-    const conflict = this.checkForConflict(snapshot)
-    if (conflict !== undefined) {
-      return { ok: false, message: conflict }
-    }
-
-    if (snapshot.source !== undefined) {
-      try {
-        this.fileSystem.unlink(snapshot.path)
-      } catch (error) {
-        return {
-          ok: false,
-          message: `Failed to reset config at '${snapshot.path}': ${error instanceof Error ? error.message : String(error)}`,
-        }
-      }
-    }
-
-    return { ok: true, loadResult: this.loadWithOverride(snapshot, undefined) }
-  }
-
-  private loadWithOverride(snapshot: AutoReviewScopeSnapshot, source: string | undefined): LoadConfigResult {
-    return loadAutoReviewConfig({
-      cwd: snapshot.cwd,
-      agentDir: this.agentDir,
-      readFile: path => (path === snapshot.path ? source : this.fileSystem.readFile(path)),
-    })
-  }
-
-  private serialize(config: AutoReviewConfigFile): string {
-    const { $schema = CONFIG_SCHEMA_URL, ...fields } = config
-    return `${JSON.stringify({ $schema, ...fields }, null, 2)}\n`
-  }
-
-  private checkForConflict(snapshot: AutoReviewScopeSnapshot): string | undefined {
-    let currentSource: string | undefined
-    try {
-      currentSource = this.fileSystem.readFile(snapshot.path)
-    } catch (error) {
-      return `Failed to re-read config at '${snapshot.path}': ${error instanceof Error ? error.message : String(error)}`
-    }
-    return currentSource === snapshot.source
-      ? undefined
-      : `Config at '${snapshot.path}' changed while it was being edited; reopen the command and try again.`
-  }
-
-  private cleanupTempFile(tempPath: string): void {
-    try {
-      this.fileSystem.unlink(tempPath)
+      rmSync(temporary, { force: true })
     } catch {
-      // The original write error is more actionable than a best-effort cleanup failure.
+      // The write error is the actionable one.
+    }
+
+    return { ok: false, message: `Failed to save config at '${snapshot.path}': ${describeError(error)}` }
+  }
+
+  return { ok: true, loadResult }
+}
+
+export function resetScope(snapshot: ScopeSnapshot): ConfigMutationResult {
+  if (!snapshot.valid && snapshot.source === undefined) {
+    return { ok: false, message: `Cannot reset unreadable config at '${snapshot.path}': ${snapshot.issue}` }
+  }
+  const conflict = checkForConflict(snapshot)
+  if (conflict !== undefined) {
+    return { ok: false, message: conflict }
+  }
+  if (snapshot.source !== undefined) {
+    try {
+      unlinkSync(snapshot.path)
+    } catch (error) {
+      return { ok: false, message: `Failed to reset config at '${snapshot.path}': ${describeError(error)}` }
     }
   }
+
+  return { ok: true, loadResult: loadConfig(snapshot.cwd) }
 }

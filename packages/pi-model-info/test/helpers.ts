@@ -1,9 +1,8 @@
 import type {
   AffixRule,
-  CatalogEntry,
   CatalogIndex,
+  CatalogEntry,
   MetadataOverride,
-  ModelGate,
   NormalizedSource,
   ResolvedConfig,
   ResolvedProvider,
@@ -11,9 +10,52 @@ import type {
   SourceId,
 } from '../src/types.js'
 import type { Api } from '@earendil-works/pi-ai'
+import type { Mock } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { buildCatalogIndex } from '../src/catalog-index.js'
 import { bareId, vendorOf } from '../src/catalog-sources.js'
-import { DEFAULT_SOURCES } from '../src/config.js'
+
+/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter. */
+export function useWorkspace(): { cwd: string; agentDir: string } {
+  const workspace = { cwd: '', agentDir: '' }
+  let root = ''
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'pi-model-info-'))
+    workspace.cwd = join(root, 'project')
+    workspace.agentDir = join(root, 'agent')
+    vi.stubEnv('PI_CODING_AGENT_DIR', workspace.agentDir)
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  return workspace
+}
+
+export function writeFile(path: string, contents: unknown): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, typeof contents === 'string' ? contents : JSON.stringify(contents))
+}
+
+/** Answers catalog requests from `respond`, keyed by the requested URL. */
+export function stubFetch(
+  respond: (url: string, headers: Headers, signal: AbortSignal) => Response | Promise<Response>,
+): Mock<(url: string | URL, init?: RequestInit) => Promise<Response>> {
+  const fetch = vi.fn(async (url: string | URL, init?: RequestInit) =>
+    respond(String(url), new Headers(init?.headers), init?.signal ?? new AbortController().signal),
+  )
+  vi.stubGlobal('fetch', fetch)
+
+  return fetch
+}
+
+export function json(body: unknown, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers })
+}
 
 export interface EntrySpec extends MetadataOverride {
   source?: SourceId
@@ -27,6 +69,7 @@ export function entry(spec: EntrySpec): CatalogEntry {
   const { source = 'pi.dev', provider, id, api, ...metadata } = spec
   const sourceProvider = provider ?? vendorOf(id)
   const short = bareId(id)
+
   return {
     source,
     sourceProvider,
@@ -37,24 +80,19 @@ export function entry(spec: EntrySpec): CatalogEntry {
   }
 }
 
-export function makeIndex(specs: EntrySpec[], order: SourceId[] = DEFAULT_SOURCES): CatalogIndex {
-  const bySource = new Map<SourceId, NormalizedSource>()
-  for (const source of order) {
-    bySource.set(source, { source, entries: [], vendors: new Map() })
-  }
+export function makeIndex(specs: EntrySpec[], order: SourceId[] = ['pi.dev', 'models.dev']): CatalogIndex {
+  const sources = order.map((source): NormalizedSource => ({ source, entries: [], vendors: new Map() }))
   for (const spec of specs) {
     const built = entry(spec)
-    const bucket = bySource.get(built.source)
-    if (bucket === undefined) {
-      continue
-    }
-    bucket.entries.push(built)
+    const bucket = sources.find(source => source.source === built.source)
+    bucket?.entries.push(built)
     // Only models.dev contributes the vendor oracle, exactly as in production.
     if (built.source === 'models.dev' && built.sourceProvider !== undefined) {
-      bucket.vendors.set(built.sourceId.toLowerCase(), built.sourceProvider)
+      bucket?.vendors.set(built.sourceId.toLowerCase(), built.sourceProvider)
     }
   }
-  return buildCatalogIndex([...bySource.values()], order)
+
+  return buildCatalogIndex(sources)
 }
 
 export function makeProvider(overrides: Partial<ResolvedProvider> = {}): ResolvedProvider {
@@ -68,7 +106,7 @@ export function makeProvider(overrides: Partial<ResolvedProvider> = {}): Resolve
     useCatalogName: false,
     mapThinkingLevels: false,
     allowDynamic: false,
-    models: new Map<string, ModelGate>(),
+    models: new Map(),
     ...overrides,
   }
 }
@@ -78,7 +116,7 @@ export function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedCon
     providers: new Map(),
     prefixRules: [],
     suffixRules: [],
-    sources: DEFAULT_SOURCES,
+    sources: ['pi.dev', 'models.dev'],
     network: { enabled: true, timeoutMs: 1000, maxBytes: 1_000_000 },
     cache: { ttlMs: 60_000, dir: undefined },
     applyOnIdleOnly: false,

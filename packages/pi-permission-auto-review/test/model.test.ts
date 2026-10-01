@@ -1,72 +1,28 @@
-import type { ReviewModelRegistry } from '../src/model.js'
-import type { Api, Model, Provider } from '@earendil-works/pi-ai'
-import { describe, expect, it, vi } from 'vitest'
+import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
+import { expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../src/config.js'
 import { resolveReviewModel } from '../src/model.js'
 
-function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
-  return {
+// `codex-auto-review` never appears in Pi's registry.
+it('derives the hidden reviewer model from another Codex model, for the Codex provider only', () => {
+  const template = {
     id: 'gpt-5.6-terra',
-    name: 'GPT-5.6 Terra',
-    api: 'openai-codex-responses',
     provider: 'openai-codex',
-    baseUrl: 'https://chatgpt.com/backend-api/codex',
-    reasoning: true,
+    api: 'openai-codex-responses',
     input: ['text', 'image'],
-    cost: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    },
-    contextWindow: 128_000,
-    maxTokens: 32_000,
-    ...overrides,
   }
-}
+  const registry = {
+    getProvider: (id: string) => ({ id, getModels: () => [] }),
+    find: () => undefined,
+    getAll: () => [template],
+  } as unknown as ModelRegistry
 
-function registry(models: Model<Api>[], provider: Provider): ReviewModelRegistry {
-  return {
-    find: vi.fn((providerId, modelId) =>
-      models.find(candidate => candidate.provider === providerId && candidate.id === modelId),
-    ),
-    getAll: vi.fn(() => models),
-    getProvider: vi.fn(providerId => (providerId === provider.id ? provider : undefined)),
-    streamSimple: vi.fn(),
-  }
-}
-
-describe('resolveReviewModel', () => {
-  it('synthesizes the hidden Codex reviewer from a Codex provider model', () => {
-    const template = model()
-    const provider = {
-      id: 'openai-codex',
-      getModels: () => [template],
-    } as unknown as Provider
-
-    const result = resolveReviewModel(registry([template], provider), DEFAULT_CONFIG)
-
-    expect(result).toMatchObject({
-      ok: true,
-      value: {
-        id: 'codex-auto-review',
-        api: 'openai-codex-responses',
-        provider: 'openai-codex',
-        input: ['text'],
-      },
-    })
+  expect(resolveReviewModel(registry, DEFAULT_CONFIG)).toMatchObject({
+    ok: true,
+    value: { id: 'codex-auto-review', api: 'openai-codex-responses', reasoning: true, input: ['text'] },
   })
-
-  it('requires custom models to exist in Pi model registry', () => {
-    const provider = {
-      id: 'custom',
-      getModels: () => [],
-    } as unknown as Provider
-    const config = { ...DEFAULT_CONFIG, provider: 'custom', model: 'codex-auto-review' }
-
-    expect(resolveReviewModel(registry([], provider), config)).toEqual({
-      ok: false,
-      category: 'model-unresolved',
-    })
+  expect(resolveReviewModel(registry, { ...DEFAULT_CONFIG, provider: 'custom' })).toEqual({
+    ok: false,
+    category: 'model-unresolved',
   })
 })

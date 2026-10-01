@@ -1,19 +1,9 @@
 import type { AutoReviewConfig } from './config.js'
 import { PI_ADAPTATION_REVISION, UPSTREAM_REVISION } from './upstream.js'
 
-// Pi adaptation of the OpenAI Codex Guardian sources listed in ./upstream.ts.
-// This text is a rewrite, not a copy: Pi's reviewer has no tools and a different
-// evidence-provenance model, so upstream wording cannot be dropped in
-// mechanically. Run `pnpm sync:policy` to learn when upstream moved and which
-// commits to read, port what applies here by hand, then `--pin` the revision.
-//
-// Pi-specific changes are limited to transcript provenance, the tool-free
-// review environment, configurable operator policy composition, and output
-// compatibility with parseReviewAssessment(). Upstream's `Execution Environment`
-// section and its MCP `connected_account_email` rule are deliberately dropped:
-// both describe Codex's sandbox and tool surface, which Pi's reviewer does not
-// have. The policy is bundled so review behavior never depends on a runtime
-// network fetch.
+// A Pi rewrite of the Guardian sources in ./upstream.ts, not a copy: Pi's reviewer has no tools and reads a different
+// evidence-provenance model. Upstream's `Execution Environment` section and MCP `connected_account_email` rule stay
+// out, as both describe Codex's sandbox. `pnpm sync:policy` reports the upstream commits to port by hand.
 export const POLICY_REVISION: string = `openai-codex/${UPSTREAM_REVISION}+pi${PI_ADAPTATION_REVISION}`
 
 export const FIXED_REVIEW_PROTOCOL: string = `
@@ -155,7 +145,7 @@ export function buildSystemPrompt(config: AutoReviewConfig): string {
       ? BASELINE_POLICY
       : `# Security Policy\nThe operator disabled the built-in Guardian policy. Apply only the operator policy below for risk taxonomy and outcome rules.`,
   ]
-  // Upstream's `{{ extra_policy }}` slot: the tail of the security policy, ahead of the outcome rules that apply it.
+  // Upstream's `{{ extra_policy }}` slot: the end of the security policy, ahead of the outcome rules that apply it.
   if (config.additionalPolicy !== undefined) {
     sections.push(`## Operator Policy
 ${config.additionalPolicy}

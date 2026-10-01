@@ -91,43 +91,23 @@ function select(found: Candidates, index: CatalogIndex, provider: ResolvedProvid
     return undefined
   }
 
-  const groups = new Map<string, CatalogEntry[]>()
-  for (const candidate of candidates) {
-    const key = (candidate.sourceProvider ?? '').toLowerCase()
-    const bucket = groups.get(key)
-    if (bucket === undefined) {
-      groups.set(key, [candidate])
-    } else {
-      bucket.push(candidate)
-    }
-  }
-
-  let group = groups.size === 1 ? [...groups.values()][0] : undefined
-  if (group === undefined) {
-    // A vendor named in the request never reaches this point: `keyForms` already scopes to it.
-    const tiers = [provider.catalogProvider, provider.id, index.vendors.get(bareId(form.id).toLowerCase())]
-    for (const tier of tiers) {
-      const match = tier === undefined ? undefined : groups.get(tier.toLowerCase())
-      if (match !== undefined) {
-        group = match
-        break
-      }
-    }
-  }
-
+  const groups = Map.groupBy(candidates, candidate => (candidate.sourceProvider ?? '').toLowerCase())
+  // A vendor named in the request never reaches the tie-break: `keyForms` already scoped the lookup to it.
+  const group =
+    groups.size === 1
+      ? [...groups.values()][0]
+      : [provider.catalogProvider, provider.id, index.vendors.get(bareId(form.id).toLowerCase())]
+          .map(tier => (tier === undefined ? undefined : groups.get(tier.toLowerCase())))
+          .find(match => match !== undefined)
   if (group === undefined) {
     return { ambiguous: candidates }
   }
-
-  const winner = group[0]
-  if (winner === undefined) {
-    return undefined
-  }
+  const winner = group[0]!
 
   return {
     hit: {
       entry: winner,
-      // pi.dev is the only source carrying `thinkingLevelMap` and `compat`, so it is the only useful donor.
+      // pi.dev is the only source carrying `thinkingLevelMap` and `compat`, so the only useful donor.
       donor: group.find(entry => entry !== winner && entry.source === 'pi.dev'),
       // The vendor prefix did work: it either scoped the lookup, or only the stripped id matched.
       viaVendorSplit: form.vendorScoped || (found.viaBare && form.vendor !== undefined),

@@ -1,51 +1,29 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
 
 /**
- * provider id → model id → field names the user hand-wrote, empty for a definition that carries
- * none. Every definition is recorded, so a present provider also answers "models.json defines this
- * provider's models" — which is what decides whether a lazy wrapper would survive recomposition.
+ * Provider id → model id → the field names the user hand-wrote. Every definition is recorded, even one with no
+ * tracked field, because models.json defining a provider's models already rules out completing it lazily.
  */
 export type UserAuthoredMap = Map<string, Map<string, Set<string>>>
 
-/** Only fields this extension would otherwise overwrite are worth tracking. */
+/** Only the fields this extension would otherwise overwrite. */
 const TRACKED_FIELDS = new Set(['name', 'reasoning', 'input', 'cost', 'contextWindow', 'maxTokens', 'thinkingLevelMap'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function defaultRead(path: string): string | undefined {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
 /**
- * Answers what the registry cannot: whether a value was hand-written or is Pi's placeholder.
- * Without it, a user who wrote `contextWindow: 200000` would silently get the catalog's number.
+ * Answers what the registry cannot: whether a value was hand-written or is Pi's placeholder. Pi reports a missing
+ * or malformed models.json itself, so either reads as authoring nothing.
  */
-export function readUserAuthoredFields(
-  agentDir: string,
-  readFile: (path: string) => string | undefined = defaultRead,
-): UserAuthoredMap {
+export function readUserAuthoredFields(): UserAuthoredMap {
   const authored: UserAuthoredMap = new Map()
-
-  let raw: string | undefined
-  try {
-    raw = readFile(join(agentDir, 'models.json'))
-  } catch {
-    return authored
-  }
-  if (raw === undefined) {
-    return authored
-  }
-
   let parsed: unknown
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(readFileSync(join(getAgentDir(), 'models.json'), 'utf8'))
   } catch {
     return authored
   }
@@ -54,15 +32,12 @@ export function readUserAuthoredFields(
   }
 
   for (const [providerId, provider] of Object.entries(parsed['providers'])) {
-    if (!isRecord(provider) || !Array.isArray(provider['models'])) {
-      continue
-    }
+    const definitions: unknown[] = isRecord(provider) && Array.isArray(provider['models']) ? provider['models'] : []
     const models = new Map<string, Set<string>>()
-    for (const definition of provider['models']) {
-      if (!isRecord(definition) || typeof definition['id'] !== 'string') {
-        continue
+    for (const definition of definitions) {
+      if (isRecord(definition) && typeof definition['id'] === 'string') {
+        models.set(definition['id'], new Set(Object.keys(definition).filter(key => TRACKED_FIELDS.has(key))))
       }
-      models.set(definition['id'], new Set(Object.keys(definition).filter(key => TRACKED_FIELDS.has(key))))
     }
     if (models.size > 0) {
       authored.set(providerId, models)

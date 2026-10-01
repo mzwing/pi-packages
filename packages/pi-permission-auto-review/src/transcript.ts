@@ -1,15 +1,13 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 
 const MAX_RECENT_UNTRUSTED_ENTRIES = 40
-const MAX_MESSAGE_TRANSCRIPT_TOKENS = 10_000
-const MAX_TOOL_TRANSCRIPT_TOKENS = 10_000
-const MAX_MESSAGE_ENTRY_TOKENS = 2_000
-const MAX_TOOL_ENTRY_TOKENS = 1_000
+const TRANSCRIPT_TOKENS = { message: 10_000, tool: 10_000 }
+const ENTRY_TOKENS = { message: 2_000, tool: 1_000 }
 const TRUSTED_USER_INTERACTION_TOOLS = new Set(['ask_user_question', 'plan_mode_question'])
 
 type TranscriptKind = 'user' | 'user_interaction' | 'assistant' | 'tool'
 
-export interface TranscriptEntry {
+interface TranscriptEntry {
   index: number
   kind: TranscriptKind
   label: string
@@ -35,11 +33,11 @@ export interface RenderedTranscript {
   stats: TranscriptStats
 }
 
+// Persisted session data, so every field is decoded rather than trusted to match the current types.
 interface ContentBlock {
   type?: unknown
   id?: unknown
   text?: unknown
-  thinking?: unknown
   name?: unknown
   toolName?: unknown
   arguments?: unknown
@@ -55,11 +53,6 @@ interface MessageLike {
   toolName?: unknown
   isError?: unknown
   details?: unknown
-}
-
-interface UserInteractionDetails {
-  cancelled?: unknown
-  answers?: unknown
 }
 
 interface UserInteractionAnswer {
@@ -81,7 +74,8 @@ function truncateToCharacters(text: string, maxCharacters: number): string {
   const available = Math.max(0, maxCharacters - tag.length)
   const headLength = Math.floor(available * 0.7)
   const tailLength = available - headLength
-  // `slice(-0)` is `slice(0)`, which would return the whole string when the budget leaves no tail.
+
+  // `slice(-0)` would return the whole string when the budget leaves no tail.
   return `${text.slice(0, headLength)}${tag}${text.slice(text.length - tailLength)}`
 }
 
@@ -104,10 +98,8 @@ function normalizeAnswer(value: unknown): unknown {
   if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) {
     return value
   }
-  if (Array.isArray(value)) {
-    return value.map(normalizeAnswer)
-  }
-  return serializeUnknown(value)
+
+  return Array.isArray(value) ? value.map(normalizeAnswer) : serializeUnknown(value)
 }
 
 function textFromContent(content: unknown): string {
@@ -117,216 +109,163 @@ function textFromContent(content: unknown): string {
   if (!Array.isArray(content)) {
     return serializeUnknown(content)
   }
+
   return content
-    .map(rawBlock => {
-      const block = rawBlock as ContentBlock
+    .map((block: ContentBlock) => {
       if (block.type === 'text' && typeof block.text === 'string') {
         return block.text
       }
-      if (block.type === 'image') {
-        return '[image omitted]'
-      }
-      return ''
+
+      return block.type === 'image' ? '[image omitted]' : ''
     })
     .filter(Boolean)
     .join('\n')
 }
 
-function normalizedAnswerEvidence(answer: UserInteractionAnswer): unknown | undefined {
-  const primaryAnswer =
+function answerEvidence(answer: UserInteractionAnswer): unknown {
+  const primary =
     answer.answer !== undefined && answer.answer !== null
       ? normalizeAnswer(answer.answer)
       : Array.isArray(answer.selected) && answer.selected.length > 0
         ? answer.selected.map(normalizeAnswer)
         : undefined
   const notes = typeof answer.notes === 'string' && answer.notes.length > 0 ? answer.notes : undefined
-  if (primaryAnswer === undefined) {
-    return notes
+  if (primary === undefined || notes === undefined) {
+    return primary ?? notes
   }
-  if (notes === undefined) {
-    return primaryAnswer
-  }
-  return { selection: primaryAnswer, notes }
+
+  return { selection: primary, notes }
 }
 
-function normalizedUserInteraction(
-  message: MessageLike,
-  interactionToolCalls: ReadonlyMap<string, string>,
-): TranscriptEntry['text'] | undefined {
-  const name = typeof message.toolName === 'string' ? message.toolName : undefined
-  const toolCallId = typeof message.toolCallId === 'string' ? message.toolCallId : undefined
+/**
+ * Only a completed, non-cancelled answer to a question tool the assistant actually called counts, rebuilt from
+ * its structured details so free-form tool text is never promoted to user evidence.
+ */
+function userInteractionText(message: MessageLike, interactionCalls: ReadonlyMap<string, string>): string | undefined {
+  const { toolName, toolCallId, details } = message
   if (
-    name === undefined ||
-    toolCallId === undefined ||
-    !TRUSTED_USER_INTERACTION_TOOLS.has(name) ||
-    interactionToolCalls.get(toolCallId) !== name ||
-    message.isError !== false
+    typeof toolName !== 'string' ||
+    typeof toolCallId !== 'string' ||
+    !TRUSTED_USER_INTERACTION_TOOLS.has(toolName) ||
+    interactionCalls.get(toolCallId) !== toolName ||
+    message.isError !== false ||
+    details === null ||
+    typeof details !== 'object'
   ) {
     return undefined
   }
-  if (message.details === null || typeof message.details !== 'object') {
+  const { cancelled, answers } = details as { cancelled?: unknown; answers?: unknown }
+  if (cancelled !== false || !Array.isArray(answers) || answers.length === 0) {
     return undefined
   }
 
-  const details = message.details as UserInteractionDetails
-  if (details.cancelled !== false || !Array.isArray(details.answers) || details.answers.length === 0) {
-    return undefined
-  }
-
-  const answers: Array<{ question: string; answer: unknown }> = []
-  for (const rawAnswer of details.answers) {
-    if (rawAnswer === null || typeof rawAnswer !== 'object') {
+  const evidence: { question: string; answer: unknown }[] = []
+  for (const answer of answers) {
+    if (answer === null || typeof answer !== 'object') {
       return undefined
     }
-    const answer = rawAnswer as UserInteractionAnswer
-    const answerEvidence = normalizedAnswerEvidence(answer)
-    if (typeof answer.question !== 'string' || answer.question.length === 0 || answerEvidence === undefined) {
+    const { question } = answer as UserInteractionAnswer
+    const value = answerEvidence(answer as UserInteractionAnswer)
+    if (typeof question !== 'string' || question.length === 0 || value === undefined) {
       return undefined
     }
-    answers.push({
-      question: answer.question,
-      answer: answerEvidence,
-    })
+    evidence.push({ question, answer: value })
   }
-  return JSON.stringify(answers)
-}
 
-function assistantEntries(
-  message: MessageLike,
-  index: number,
-  interactionToolCalls: Map<string, string>,
-): TranscriptEntry[] {
-  const content = Array.isArray(message.content) ? message.content : []
-  const text = textFromContent(message.content)
-  const entries: TranscriptEntry[] = []
-  if (text) {
-    entries.push({ index, kind: 'assistant', label: 'assistant', text })
-  }
-  for (const rawBlock of content) {
-    const block = rawBlock as ContentBlock
-    if (block.type !== 'toolCall') {
-      continue
-    }
-    const name =
-      typeof block.name === 'string' ? block.name : typeof block.toolName === 'string' ? block.toolName : 'unknown'
-    if (typeof block.id === 'string' && TRUSTED_USER_INTERACTION_TOOLS.has(name)) {
-      interactionToolCalls.set(block.id, name)
-    }
-    entries.push({
-      index,
-      kind: 'tool',
-      label: `tool:${name}`,
-      text: serializeUnknown(block.arguments),
-    })
-  }
-  return entries
+  return JSON.stringify(evidence)
 }
 
 function entriesFromMessage(
   message: MessageLike,
   index: number,
-  interactionToolCalls: Map<string, string>,
+  interactionCalls: Map<string, string>,
 ): TranscriptEntry[] {
+  const entry = (kind: TranscriptKind, label: string, text: string): TranscriptEntry[] =>
+    text ? [{ index, kind, label, text }] : []
+
   switch (message.role) {
-    case 'user': {
-      const text = textFromContent(message.content)
-      return text ? [{ index, kind: 'user', label: 'user', text }] : []
+    case 'user':
+      return entry('user', 'user', textFromContent(message.content))
+    case 'assistant': {
+      const toolCalls = (Array.isArray(message.content) ? message.content : []).flatMap((block: ContentBlock) => {
+        if (block.type !== 'toolCall') {
+          return []
+        }
+        const name =
+          typeof block.name === 'string' ? block.name : typeof block.toolName === 'string' ? block.toolName : 'unknown'
+        if (typeof block.id === 'string' && TRUSTED_USER_INTERACTION_TOOLS.has(name)) {
+          interactionCalls.set(block.id, name)
+        }
+
+        return [{ index, kind: 'tool' as const, label: `tool:${name}`, text: serializeUnknown(block.arguments) }]
+      })
+
+      return [...entry('assistant', 'assistant', textFromContent(message.content)), ...toolCalls]
     }
-    case 'assistant':
-      return assistantEntries(message, index, interactionToolCalls)
     case 'toolResult': {
       const name = typeof message.toolName === 'string' ? message.toolName : 'unknown'
-      const userInteraction = normalizedUserInteraction(message, interactionToolCalls)
-      if (userInteraction !== undefined) {
-        return [
-          {
-            index,
-            kind: 'user_interaction',
-            label: `user_interaction:${name}`,
-            text: userInteraction,
-          },
-        ]
+      const interaction = userInteractionText(message, interactionCalls)
+      if (interaction !== undefined) {
+        return [{ index, kind: 'user_interaction', label: `user_interaction:${name}`, text: interaction }]
       }
-      const suffix = message.isError === true ? ' (error)' : ''
-      const text = textFromContent(message.content)
-      return text ? [{ index, kind: 'tool', label: `tool:${name}${suffix}`, text }] : []
+
+      return entry(
+        'tool',
+        `tool:${name}${message.isError === true ? ' (error)' : ''}`,
+        textFromContent(message.content),
+      )
     }
-    case 'bashExecution': {
-      const command = serializeUnknown(message.command)
-      const output = serializeUnknown(message.output)
+    case 'bashExecution':
       return [
         {
           index,
           kind: 'tool',
           label: 'tool:user-bash',
-          text: `${command}\n${output}`,
+          text: `${serializeUnknown(message.command)}\n${serializeUnknown(message.output)}`,
         },
       ]
-    }
     case 'branchSummary':
-    case 'compactionSummary': {
-      const text = serializeUnknown(message.summary)
-      return text ? [{ index, kind: 'assistant', label: String(message.role), text }] : []
-    }
-    case 'custom': {
-      const text = textFromContent(message.content)
-      return text ? [{ index, kind: 'assistant', label: 'custom', text }] : []
-    }
+    case 'compactionSummary':
+      return entry('assistant', message.role, serializeUnknown(message.summary))
+    case 'custom':
+      return entry('assistant', 'custom', textFromContent(message.content))
     default:
       return []
   }
 }
 
-export function collectTranscriptEntries(sessionEntries: SessionEntry[]): TranscriptEntry[] {
-  const interactionToolCalls = new Map<string, string>()
-  return sessionEntries.flatMap((entry, index) => {
+function collectEntries(sessionEntries: SessionEntry[]): TranscriptEntry[] {
+  const interactionCalls = new Map<string, string>()
+
+  return sessionEntries.flatMap((entry, index): TranscriptEntry[] => {
     if (entry.type === 'message') {
-      return entriesFromMessage(entry.message, index, interactionToolCalls)
+      return entriesFromMessage(entry.message, index, interactionCalls)
     }
     if (entry.type === 'compaction' || entry.type === 'branch_summary') {
-      return [
-        {
-          index,
-          kind: 'assistant' as const,
-          label: entry.type,
-          text: entry.summary,
-        },
-      ]
+      return [{ index, kind: 'assistant', label: entry.type, text: entry.summary }]
     }
     if (entry.type === 'custom_message') {
       const text = textFromContent(entry.content)
-      return text
-        ? [
-            {
-              index,
-              kind: 'assistant' as const,
-              label: 'custom',
-              text,
-            },
-          ]
-        : []
+
+      return text ? [{ index, kind: 'assistant', label: 'custom', text }] : []
     }
+
     return []
   })
 }
 
-function renderTranscriptEntry(entry: TranscriptEntry): string {
-  return JSON.stringify({
-    index: entry.index,
-    source: entry.kind,
-    label: entry.label,
-    content: entry.text,
-  })
+function renderEntry(entry: TranscriptEntry): string {
+  return JSON.stringify({ index: entry.index, source: entry.kind, label: entry.label, content: entry.text })
 }
 
-function transcriptEntryTokens(entry: TranscriptEntry): number {
-  return approximateTokens(renderTranscriptEntry(entry))
+function pool(entry: TranscriptEntry): 'message' | 'tool' {
+  return entry.kind === 'tool' ? 'tool' : 'message'
 }
 
+/** Truncates after JSON escaping, which can multiply the rendered length, so the cap holds on the wire. */
 function pretruncate(entry: TranscriptEntry): TranscriptEntry {
-  const maxTokens = entry.kind === 'tool' ? MAX_TOOL_ENTRY_TOKENS : MAX_MESSAGE_ENTRY_TOKENS
-  const maxCharacters = maxTokens * 4
-  if (renderTranscriptEntry(entry).length <= maxCharacters) {
+  const maxCharacters = ENTRY_TOKENS[pool(entry)] * 4
+  if (renderEntry(entry).length <= maxCharacters) {
     return entry
   }
 
@@ -336,13 +275,14 @@ function pretruncate(entry: TranscriptEntry): TranscriptEntry {
   while (lower <= upper) {
     const middle = Math.floor((lower + upper) / 2)
     const candidate = truncateToCharacters(entry.text, middle)
-    if (renderTranscriptEntry({ ...entry, text: candidate }).length <= maxCharacters) {
+    if (renderEntry({ ...entry, text: candidate }).length <= maxCharacters) {
       text = candidate
       lower = middle + 1
     } else {
       upper = middle - 1
     }
   }
+
   return { ...entry, text, truncated: true }
 }
 
@@ -350,86 +290,72 @@ function isTrusted(entry: TranscriptEntry): boolean {
   return entry.kind === 'user' || entry.kind === 'user_interaction'
 }
 
-function addWithinBudget(selected: Set<TranscriptEntry>, entries: TranscriptEntry[], budget: number): number {
-  let used = 0
-  for (const entry of entries) {
-    const tokens = transcriptEntryTokens(entry)
-    if (used + tokens > budget) {
-      continue
-    }
-    selected.add(entry)
-    used += tokens
-  }
-  return used
-}
-
+/**
+ * Keeps the first and latest trusted records unconditionally, then other trusted records newest first, then the
+ * newest untrusted ones; the untrusted cap never evicts an authorization that was already selected.
+ */
 export function renderTranscript(sessionEntries: SessionEntry[]): RenderedTranscript {
-  const allEntries = collectTranscriptEntries(sessionEntries).map(pretruncate)
+  const all = collectEntries(sessionEntries).map(pretruncate)
+  const trusted = all.filter(isTrusted)
   const selected = new Set<TranscriptEntry>()
-  const trustedEntries = allEntries.filter(isTrusted)
-
-  let messageTokens = 0
-  if (trustedEntries.length > 0) {
-    const first = trustedEntries[0]
-    const latest = trustedEntries.at(-1)
-    if (first !== undefined) {
-      selected.add(first)
-      messageTokens += transcriptEntryTokens(first)
+  const used = { message: 0, tool: 0 }
+  const take = (entry: TranscriptEntry, force = false): boolean => {
+    const tokens = approximateTokens(renderEntry(entry))
+    if (!force && used[pool(entry)] + tokens > TRANSCRIPT_TOKENS[pool(entry)]) {
+      return false
     }
-    if (latest !== undefined && latest !== first) {
-      selected.add(latest)
-      messageTokens += transcriptEntryTokens(latest)
-    }
-  }
-
-  const remainingTrusted = trustedEntries.filter(entry => !selected.has(entry)).toReversed()
-  messageTokens += addWithinBudget(selected, remainingTrusted, MAX_MESSAGE_TRANSCRIPT_TOKENS - messageTokens)
-
-  let toolTokens = 0
-  let untrustedEntriesRetained = 0
-  for (const entry of allEntries.toReversed()) {
-    if (isTrusted(entry) || untrustedEntriesRetained >= MAX_RECENT_UNTRUSTED_ENTRIES) {
-      continue
-    }
-    const tokens = transcriptEntryTokens(entry)
-    if (entry.kind === 'tool') {
-      if (toolTokens + tokens > MAX_TOOL_TRANSCRIPT_TOKENS) {
-        continue
-      }
-      toolTokens += tokens
-    } else {
-      if (messageTokens + tokens > MAX_MESSAGE_TRANSCRIPT_TOKENS) {
-        continue
-      }
-      messageTokens += tokens
-    }
+    used[pool(entry)] += tokens
     selected.add(entry)
-    untrustedEntriesRetained += 1
+
+    return true
   }
 
-  const retained = [...selected].sort((left, right) => left.index - right.index)
-  const latestTrusted = trustedEntries.at(-1)
-  const directUsers = allEntries.filter(entry => entry.kind === 'user')
-  const userInteractions = allEntries.filter(entry => entry.kind === 'user_interaction')
-  const directUserEntriesRetained = retained.filter(entry => entry.kind === 'user').length
-  const userInteractionEntriesRetained = retained.filter(entry => entry.kind === 'user_interaction').length
-  const stats: TranscriptStats = {
-    transcriptEntriesRetained: retained.length,
-    transcriptEntriesOmitted: allEntries.length - retained.length,
-    transcriptEntriesTruncated: retained.filter(entry => entry.truncated === true).length,
-    directUserEntriesRetained,
-    directUserEntriesOmitted: directUsers.length - directUserEntriesRetained,
-    directUserEntriesTruncated: retained.filter(entry => entry.kind === 'user' && entry.truncated === true).length,
-    userInteractionEntriesRetained,
-    userInteractionEntriesOmitted: userInteractions.length - userInteractionEntriesRetained,
-    userInteractionEntriesTruncated: retained.filter(
-      entry => entry.kind === 'user_interaction' && entry.truncated === true,
-    ).length,
-    latestTrustedEntryRetained: latestTrusted !== undefined && selected.has(latestTrusted),
+  for (const anchor of [trusted[0], trusted.at(-1)]) {
+    if (anchor !== undefined && !selected.has(anchor)) {
+      take(anchor, true)
+    }
   }
+  for (const entry of trusted.toReversed()) {
+    if (!selected.has(entry)) {
+      take(entry)
+    }
+  }
+  let untrustedRetained = 0
+  for (const entry of all.toReversed()) {
+    if (!isTrusted(entry) && untrustedRetained < MAX_RECENT_UNTRUSTED_ENTRIES && take(entry)) {
+      untrustedRetained += 1
+    }
+  }
+
+  const retained = all.filter(entry => selected.has(entry))
+  const tally = (kind?: TranscriptKind): { retained: number; omitted: number; truncated: number } => {
+    const matches = (entry: TranscriptEntry): boolean => kind === undefined || entry.kind === kind
+    const kept = retained.filter(matches)
+
+    return {
+      retained: kept.length,
+      omitted: all.filter(matches).length - kept.length,
+      truncated: kept.filter(entry => entry.truncated === true).length,
+    }
+  }
+  const total = tally()
+  const user = tally('user')
+  const interaction = tally('user_interaction')
+  const latest = trusted.at(-1)
 
   return {
-    entries: retained.map(renderTranscriptEntry),
-    stats,
+    entries: retained.map(renderEntry),
+    stats: {
+      transcriptEntriesRetained: total.retained,
+      transcriptEntriesOmitted: total.omitted,
+      transcriptEntriesTruncated: total.truncated,
+      directUserEntriesRetained: user.retained,
+      directUserEntriesOmitted: user.omitted,
+      directUserEntriesTruncated: user.truncated,
+      userInteractionEntriesRetained: interaction.retained,
+      userInteractionEntriesOmitted: interaction.omitted,
+      userInteractionEntriesTruncated: interaction.truncated,
+      latestTrustedEntryRetained: latest !== undefined && selected.has(latest),
+    },
   }
 }

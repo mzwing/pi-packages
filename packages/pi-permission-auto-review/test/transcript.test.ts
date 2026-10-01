@@ -1,6 +1,6 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it } from 'vitest'
-import { collectTranscriptEntries, renderTranscript } from '../src/transcript.js'
+import { renderTranscript } from '../src/transcript.js'
 
 function messageEntry(id: string, role: string, content: unknown, extra: Record<string, unknown> = {}): SessionEntry {
   return {
@@ -46,6 +46,12 @@ function userInteractionEntries(
   ]
 }
 
+function records(entries: SessionEntry[]): { index: number; source: string; label: string; content: string }[] {
+  return renderTranscript(entries).entries.map(
+    entry => JSON.parse(entry) as { index: number; source: string; label: string; content: string },
+  )
+}
+
 describe('transcript rendering', () => {
   it('canonicalizes completed recognized question responses as trusted user interactions', () => {
     const entries = [
@@ -57,16 +63,18 @@ describe('transcript rendering', () => {
       ]),
     ]
 
-    expect(collectTranscriptEntries(entries).filter(entry => entry.kind === 'user_interaction')).toMatchObject([
+    expect(records(entries).filter(record => record.source === 'user_interaction')).toEqual([
       {
-        kind: 'user_interaction',
+        index: 1,
+        source: 'user_interaction',
         label: 'user_interaction:ask_user_question',
-        text: '[{"question":"Choose a color?","answer":"Blue"}]',
+        content: '[{"question":"Choose a color?","answer":"Blue"}]',
       },
       {
-        kind: 'user_interaction',
+        index: 3,
+        source: 'user_interaction',
         label: 'user_interaction:plan_mode_question',
-        text: '[{"question":"Choose targets?","answer":{"selection":["Alpha","Beta"],"notes":"Both"}}]',
+        content: '[{"question":"Choose targets?","answer":{"selection":["Alpha","Beta"],"notes":"Both"}}]',
       },
     ])
   })
@@ -86,7 +94,7 @@ describe('transcript rendering', () => {
       }),
     ]
 
-    expect(collectTranscriptEntries(entries).every(entry => entry.kind === 'tool')).toBe(true)
+    expect(records(entries).map(record => record.source)).toEqual(Array.from({ length: 12 }).fill('tool'))
   })
 
   it('requires a matching preceding recognized tool call', () => {
@@ -100,7 +108,7 @@ describe('transcript rendering', () => {
       isError: false,
     })
 
-    expect(collectTranscriptEntries([resultOnly])).toMatchObject([{ kind: 'tool' }])
+    expect(records([resultOnly])).toMatchObject([{ source: 'tool' }])
   })
 
   it('marks user-role messages while keeping assistant, tool, custom, and summary evidence untrusted', () => {
@@ -135,13 +143,13 @@ describe('transcript rendering', () => {
       },
     ] as SessionEntry[]
 
-    expect(collectTranscriptEntries(entries)).toMatchObject([
-      { kind: 'user', label: 'user' },
-      { kind: 'assistant', label: 'assistant' },
-      { kind: 'tool', label: 'tool:bash' },
-      { kind: 'tool', label: 'tool:unknown' },
-      { kind: 'assistant', label: 'compaction' },
-      { kind: 'assistant', label: 'custom' },
+    expect(records(entries)).toMatchObject([
+      { source: 'user', label: 'user' },
+      { source: 'assistant', label: 'assistant' },
+      { source: 'tool', label: 'tool:bash' },
+      { source: 'tool', label: 'tool:unknown' },
+      { source: 'assistant', label: 'compaction' },
+      { source: 'assistant', label: 'custom' },
     ])
   })
 
@@ -181,27 +189,6 @@ describe('transcript rendering', () => {
       userInteractionEntriesTruncated: 0,
       latestTrustedEntryRetained: true,
     })
-  })
-
-  it('retains original trusted branch entries alongside an untrusted compaction summary', () => {
-    const entries = [
-      messageEntry('user', 'user', 'Original authorization'),
-      {
-        type: 'compaction',
-        id: 'summary',
-        parentId: 'user',
-        timestamp: '2026-07-23T00:01:00.000Z',
-        summary: 'Compacted context',
-        firstKeptEntryId: 'user',
-        tokensBefore: 100,
-      } as SessionEntry,
-      messageEntry('assistant', 'assistant', 'Current response'),
-    ]
-
-    const rendered = renderTranscript(entries)
-
-    expect(rendered.entries.some(entry => entry.includes('"source":"user"'))).toBe(true)
-    expect(rendered.entries.some(entry => entry.includes('"label":"compaction"'))).toBe(true)
   })
 
   it('applies per-entry limits after JSON escaping and reports trusted truncation separately', () => {

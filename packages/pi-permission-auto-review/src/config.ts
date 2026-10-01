@@ -1,38 +1,32 @@
-import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import process from 'node:process'
 import { z } from 'zod'
 
 export const EXTENSION_ID = 'pi-permission-auto-review'
-export const AUTHORIZER_NAME = 'auto-review'
 export const DEFAULT_PROVIDER = 'openai-codex'
 export const DEFAULT_MODEL = 'codex-auto-review'
-const DEFAULT_TIMEOUT_MS = 90_000
+export const MAX_TIMEOUT_MS = 300_000
 export const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-permission-auto-review/schemas/config.schema.json'
 
 export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
-const configFileShape = {
+const timeoutSchema = z.number().int().positive().max(MAX_TIMEOUT_MS)
+
+const fileSchema = z.strictObject({
   $schema: z.string().min(1).optional(),
   provider: z.string().trim().min(1).optional(),
   model: z.string().trim().min(1).optional(),
   reasoning: z.enum(REASONING_LEVELS).optional(),
-  timeoutMs: z.number().int().positive().max(300_000).optional(),
+  timeoutMs: timeoutSchema.optional(),
   includeBaselinePolicy: z.boolean().optional(),
   additionalPolicy: z.string().trim().min(1).optional(),
-}
+})
 
-const autoReviewConfigFileSchema = z.strictObject(configFileShape)
-
-const autoReviewConfigSchema = z
-  .strictObject({
-    ...configFileShape,
+const configSchema = fileSchema
+  .extend({
     provider: z.string().trim().min(1).default(DEFAULT_PROVIDER),
     model: z.string().trim().min(1).default(DEFAULT_MODEL),
     reasoning: z.enum(REASONING_LEVELS).default('low'),
-    timeoutMs: z.number().int().positive().max(300_000).default(DEFAULT_TIMEOUT_MS),
+    timeoutMs: timeoutSchema.default(90_000),
     includeBaselinePolicy: z.boolean().default(true),
   })
   .superRefine((config, context) => {
@@ -45,10 +39,7 @@ const autoReviewConfigSchema = z
     }
   })
 
-/**
- * Hand-written because `isolatedDeclarations` cannot emit a `z.infer` of a module-private schema.
- * `DEFAULT_CONFIG` below is the assignability check that keeps the two in step.
- */
+// `isolatedDeclarations` cannot emit a `z.infer` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
 export interface AutoReviewConfig {
   $schema?: string | undefined
   provider: string
@@ -59,189 +50,55 @@ export interface AutoReviewConfig {
   additionalPolicy?: string | undefined
 }
 
-export const DEFAULT_CONFIG: AutoReviewConfig = autoReviewConfigSchema.parse({})
+export type AutoReviewConfigFile = { [K in keyof AutoReviewConfig]?: AutoReviewConfig[K] | undefined }
 
-export interface AutoReviewConfigFile {
-  $schema?: string | undefined
-  provider?: string | undefined
-  model?: string | undefined
-  reasoning?: (typeof REASONING_LEVELS)[number] | undefined
-  timeoutMs?: number | undefined
-  includeBaselinePolicy?: boolean | undefined
-  additionalPolicy?: string | undefined
+export const DEFAULT_CONFIG: AutoReviewConfig = configSchema.parse({})
+
+export type ParseResult<T> = { ok: true; config: T } | { ok: false; issue: string }
+
+function formatIssues(error: z.ZodError): string {
+  return error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
 }
 
-export interface ConfigIssue {
-  sourcePath: string
-  message: string
+export function validateConfigFile(value: unknown): ParseResult<AutoReviewConfigFile> {
+  const parsed = fileSchema.safeParse(value)
+
+  return parsed.success ? { ok: true, config: parsed.data } : { ok: false, issue: formatIssues(parsed.error) }
 }
 
-export interface LoadConfigResult {
-  config: AutoReviewConfig | undefined
-  issues: ConfigIssue[]
-  globalPath: string
-  projectPath: string
-}
-
-export interface LoadConfigOptions {
-  cwd: string
-  agentDir?: string
-  readFile?: (path: string) => string | undefined
-}
-
-export interface AutoReviewConfigPaths {
-  globalPath: string
-  projectPath: string
-}
-
-export type ParseAutoReviewConfigFileResult =
-  | { ok: true; config: AutoReviewConfigFile }
-  | { ok: false; issue: ConfigIssue }
-
-export function defaultAutoReviewAgentDir(): string {
-  return process.env['PI_CODING_AGENT_DIR'] ?? join(homedir(), '.pi', 'agent')
-}
-
-export function getAutoReviewConfigPaths(
-  cwd: string,
-  agentDir: string = defaultAutoReviewAgentDir(),
-): AutoReviewConfigPaths {
-  return {
-    globalPath: join(agentDir, 'extensions', EXTENSION_ID, 'config.json'),
-    projectPath: join(cwd, '.pi', 'extensions', EXTENSION_ID, 'config.json'),
-  }
-}
-
-/** Reads a config file, reporting a missing one as `undefined` rather than an error. */
-export function readConfigFile(path: string): string | undefined {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return undefined
-    }
-    throw error
-  }
-}
-
-function formatZodIssue(error: z.ZodError): string {
-  return error.issues
-    .map(issue => {
-      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)'
-      return `${path}: ${issue.message}`
-    })
-    .join('; ')
-}
-
-export function validateAutoReviewConfigFile(value: unknown, sourcePath: string): ParseAutoReviewConfigFileResult {
-  const parsed = autoReviewConfigFileSchema.safeParse(value)
-  if (!parsed.success) {
-    return {
-      ok: false,
-      issue: {
-        sourcePath,
-        message: formatZodIssue(parsed.error),
-      },
-    }
-  }
-  return { ok: true, config: parsed.data }
-}
-
-export function parseAutoReviewConfigFile(source: string, sourcePath: string): ParseAutoReviewConfigFileResult {
+export function parseConfigFile(source: string): ParseResult<AutoReviewConfigFile> {
   let value: unknown
   try {
     value = JSON.parse(source)
   } catch (error) {
-    return {
-      ok: false,
-      issue: {
-        sourcePath,
-        message: `invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    }
+    return { ok: false, issue: `invalid JSON: ${error instanceof Error ? error.message : String(error)}` }
   }
-  return validateAutoReviewConfigFile(value, sourcePath)
+
+  return validateConfigFile(value)
 }
 
-function readScope(
-  path: string,
-  readFile: (path: string) => string | undefined,
-  issues: ConfigIssue[],
-): AutoReviewConfigFile | undefined {
-  let source: string | undefined
-  try {
-    source = readFile(path)
-  } catch (error) {
-    issues.push({
-      sourcePath: path,
-      message: error instanceof Error ? error.message : String(error),
-    })
-    return undefined
-  }
+/** Project fields override global ones; the cross-field rule can only be judged on the merge. */
+export function mergeConfig(
+  global: AutoReviewConfigFile,
+  project: AutoReviewConfigFile,
+): ParseResult<AutoReviewConfig> {
+  const parsed = configSchema.safeParse({ ...global, ...project })
 
-  if (source === undefined) {
-    return {}
-  }
-
-  const parsed = parseAutoReviewConfigFile(source, path)
-  if (!parsed.ok) {
-    issues.push(parsed.issue)
-    return undefined
-  }
-  return parsed.config
+  return parsed.success ? { ok: true, config: parsed.data } : { ok: false, issue: formatIssues(parsed.error) }
 }
 
-export function loadAutoReviewConfig(options: LoadConfigOptions): LoadConfigResult {
-  const { globalPath, projectPath } = getAutoReviewConfigPaths(options.cwd, options.agentDir)
-  const readFile = options.readFile ?? readConfigFile
-  const issues: ConfigIssue[] = []
-  const globalConfig = readScope(globalPath, readFile, issues)
-  const projectConfig = readScope(projectPath, readFile, issues)
+export function buildJsonSchema(): Record<string, unknown> {
+  const { $schema, ...schema } = z.toJSONSchema(configSchema, { target: 'draft-2020-12', io: 'input' })
 
-  if (globalConfig === undefined || projectConfig === undefined) {
-    return { config: undefined, issues, globalPath, projectPath }
-  }
-
-  const merged = autoReviewConfigSchema.safeParse({
-    ...globalConfig,
-    ...projectConfig,
-  })
-  if (!merged.success) {
-    issues.push({
-      sourcePath: projectPath,
-      message: formatZodIssue(merged.error),
-    })
-    return { config: undefined, issues, globalPath, projectPath }
-  }
-
-  return {
-    config: merged.data,
-    issues,
-    globalPath,
-    projectPath,
-  }
-}
-
-export function buildAutoReviewJsonSchema(): Record<string, unknown> {
-  const { $schema, ...schema } = z.toJSONSchema(autoReviewConfigSchema, {
-    target: 'draft-2020-12',
-    io: 'input',
-  })
   return {
     $schema,
     $id: CONFIG_SCHEMA_URL,
     ...schema,
+    // Mirrors the `superRefine`, which JSON Schema output cannot express on its own.
     allOf: [
       {
-        if: {
-          properties: {
-            includeBaselinePolicy: { const: false },
-          },
-          required: ['includeBaselinePolicy'],
-        },
-        then: {
-          required: ['additionalPolicy'],
-        },
+        if: { properties: { includeBaselinePolicy: { const: false } }, required: ['includeBaselinePolicy'] },
+        then: { required: ['additionalPolicy'] },
       },
     ],
   }

@@ -1,5 +1,11 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.7.0
+
+### Minor Changes
+
+- [`80b4ec9`](https://github.com/mzwing/pi-packages/commit/80b4ec97f3ac978195e01b789f7e9bb54b3ed82a) Thanks [@mzwing](https://github.com/mzwing)! - refactor: clean for a more clear structure, switch to a more modern writing, refine README
+
 ## 0.6.0
 
 ### Minor Changes

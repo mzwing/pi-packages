@@ -1,8 +1,11 @@
-import type { Api } from '@earendil-works/pi-ai'
+import type { Api, SamplingParamsByThinkingLevel } from '@earendil-works/pi-ai'
 import type { ProviderModelConfig } from '@earendil-works/pi-coding-agent'
 
 /** Pi exports only the union, and chat is the one kind this extension completes. */
-export type ChatModelConfig = Extract<ProviderModelConfig, { type?: 'chat' }>
+export type ChatModelConfig = Extract<ProviderModelConfig, { type?: 'chat' }> & {
+  /** Missing from Pi's extension type, though a registered definition still carries it to the model. */
+  samplingParamsByThinkingLevel?: SamplingParamsByThinkingLevel
+}
 
 export type ModelCost = ChatModelConfig['cost']
 export type ModelCostTier = NonNullable<ModelCost['tiers']>[number]
@@ -29,6 +32,7 @@ export interface SnapshotModel {
   contextWindow: number
   maxTokens: number
   samplingParams?: Record<string, unknown> | undefined
+  samplingParamsByThinkingLevel?: SamplingParamsByThinkingLevel | undefined
   headers?: Record<string, string> | undefined
   compat?: ModelCompat | undefined
   promptCache?: ChatModelConfig['promptCache'] | undefined

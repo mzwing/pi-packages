@@ -8,6 +8,7 @@ it('exports exactly the documented pipeline from the ./review subpath', () => {
     'POLICY_REVISION',
     'buildReviewPrompt',
     'buildSystemPrompt',
+    'findToolCallInput',
     'parseReviewAssessment',
     'renderTranscript',
   ])

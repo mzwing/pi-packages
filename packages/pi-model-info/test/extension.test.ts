@@ -355,6 +355,7 @@ describe('model info extension', () => {
       const model = makeSnapshot({
         headers: { 'x-relay': '1' },
         samplingParams: { top_p: 0.9 },
+        samplingParamsByThinkingLevel: { high: { temperature: 1 } },
         promptCache: { short: 300 },
         inputLimits: { images: { maxPerMessage: 4 } },
       })
@@ -367,6 +368,7 @@ describe('model info extension', () => {
         baseUrl: model.baseUrl,
         headers: model.headers,
         samplingParams: model.samplingParams,
+        samplingParamsByThinkingLevel: model.samplingParamsByThinkingLevel,
         promptCache: model.promptCache,
         inputLimits: model.inputLimits,
       })

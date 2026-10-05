@@ -2,21 +2,34 @@ import type { DenialCircuitBreaker } from './circuit-breaker.js'
 import type { AutoReviewConfig } from './config.js'
 import type { TranscriptStats } from './transcript.js'
 import type { ReviewAssessment } from './verdict.js'
-import type { ExtensionContext, ModelRegistry } from '@earendil-works/pi-coding-agent'
-import type { Authorizer, AuthorizerLog, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
+import type {
+  Authorizer,
+  AuthorizerLog,
+  AuthorizerVerdict,
+  PromptPermissionDetails,
+} from '@gotgenes/pi-permission-system'
 import { resolveReviewModel } from './model.js'
 import { POLICY_REVISION } from './policy.js'
 import { buildReviewPrompt } from './prompt.js'
-import { renderTranscript } from './transcript.js'
+import { approximateTokens, findToolCallInput, renderTranscript } from './transcript.js'
 import { parseReviewAssessment } from './verdict.js'
 
 const RETRY_DELAYS_MS = [250, 1_000]
-const MAX_OUTPUT_TOKENS = 1_000
+/** Room left for reasoning and the verdict when a prompt is admitted; pi-ai keeps its own margin on top. */
+const OUTPUT_RESERVE_TOKENS = 16_384
 const DECISION_EVENT = 'auto_review.decision'
+// Upstream keys its reviewer as `guardian:{parent}` too: sharing the main session's key would let every review
+// replace the main conversation's Codex WebSocket continuation.
+const SESSION_KEY_PREFIX = 'auto-review:'
+// Verbatim `REJECTION_INSTRUCTIONS` from openai/codex `codex-rs/prompts/src/model_messages/guardian.rs`.
+const REJECTION_INSTRUCTIONS =
+  'The agent must not attempt to achieve the same outcome via workaround, indirect execution, or policy circumvention. Proceed only with a materially safer alternative, or if the user explicitly approves the action after being informed of the risk. Otherwise, stop and request user input'
 
 type FailureCategory =
   | 'provider-unresolved'
   | 'model-unresolved'
+  | 'input-budget-exceeded'
   | 'provider-error'
   | 'invalid-response'
   | 'timeout'
@@ -25,21 +38,25 @@ type FailureCategory =
 
 export interface ReviewerRuntime {
   config: AutoReviewConfig
-  registry: ModelRegistry
-  sessionManager: ExtensionContext['sessionManager']
+  /** Read at every review, since `signal` belongs to the turn in progress. */
+  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal'>
   circuitBreaker: DenialCircuitBreaker
   /** Aborted when the reviewer is replaced or the session ends. */
   sessionSignal: AbortSignal
 }
 
-interface ContextDiagnostics extends TranscriptStats {
+interface ReviewDiagnostics extends TranscriptStats {
   policyRevision: string
   contextSource: 'active-branch'
+  toolInputIncluded: boolean
+  inputTokens: number
+  cacheReadTokens: number
+  outputTokens: number
 }
 
 type ReviewResult =
-  | { assessment: ReviewAssessment; contextDiagnostics: ContextDiagnostics }
-  | { failure: FailureCategory; contextDiagnostics?: ContextDiagnostics }
+  | { assessment: ReviewAssessment; diagnostics: ReviewDiagnostics }
+  | { failure: FailureCategory; diagnostics?: ReviewDiagnostics }
 
 function abortError(): Error {
   const error = new Error('operation aborted')
@@ -86,34 +103,51 @@ async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Prom
 }
 
 async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDetails): Promise<ReviewResult> {
-  const { config, registry } = runtime
+  const { config, context } = runtime
   const startedAt = Date.now()
   const timeoutController = new AbortController()
   const timeout = setTimeout(() => timeoutController.abort(), config.timeoutMs)
-  const signal = AbortSignal.any([timeoutController.signal, runtime.sessionSignal])
+  const turnSignal = context.signal
+  const signal = AbortSignal.any([
+    timeoutController.signal,
+    runtime.sessionSignal,
+    ...(turnSignal === undefined ? [] : [turnSignal]),
+  ])
 
   try {
-    const transcript = renderTranscript(runtime.sessionManager.getBranch())
-    const contextDiagnostics: ContextDiagnostics = {
+    if (signal.aborted) {
+      return { failure: 'cancelled' }
+    }
+    const branch = context.sessionManager.getBranch()
+    const transcript = renderTranscript(branch)
+    const toolInput = findToolCallInput(branch, details.toolCallId)
+    const diagnostics: ReviewDiagnostics = {
       policyRevision: POLICY_REVISION,
       contextSource: 'active-branch',
+      toolInputIncluded: toolInput !== undefined,
       ...transcript.stats,
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      outputTokens: 0,
     }
-    const failure = (category: FailureCategory): ReviewResult => ({ failure: category, contextDiagnostics })
+    const failure = (category: FailureCategory): ReviewResult => ({ failure: category, diagnostics })
     const aborted = (): ReviewResult => failure(timeoutController.signal.aborted ? 'timeout' : 'cancelled')
 
-    const resolved = resolveReviewModel(registry, config)
+    const resolved = resolveReviewModel(context.modelRegistry, config)
     if (!resolved.ok) {
       return failure(resolved.category)
     }
     const model = resolved.value
-    const prompt = buildReviewPrompt(config, transcript, details)
+    const prompt = buildReviewPrompt(config, transcript, details, toolInput)
+    if (approximateTokens(prompt.systemPrompt + prompt.userPrompt) + OUTPUT_RESERVE_TOKENS > model.contextWindow) {
+      return failure('input-budget-exceeded')
+    }
 
-    let text: string
     for (let attempt = 0; ; attempt += 1) {
+      let category: FailureCategory = 'provider-error'
       try {
         // The registry resolves the provider's authentication per request, so an unusable login lands here.
-        const stream = registry.streamSimple(
+        const stream = context.modelRegistry.streamSimple(
           model,
           {
             systemPrompt: prompt.systemPrompt,
@@ -121,42 +155,40 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
           },
           {
             maxRetries: 0,
-            maxTokens: MAX_OUTPUT_TOKENS,
             signal,
             timeoutMs: Math.max(1, config.timeoutMs - (Date.now() - startedAt)),
-            // Gateways such as opencode-go reject requests without a session id.
-            sessionId: runtime.sessionManager.getSessionId(),
+            // Gateways such as opencode-go also reject requests without a session id.
+            sessionId: `${SESSION_KEY_PREFIX}${context.sessionManager.getSessionId()}`,
             ...(model.reasoning && config.reasoning !== 'off' ? { reasoning: config.reasoning } : {}),
           },
         )
         const message = await raceWithSignal(stream.result(), signal)
+        diagnostics.inputTokens += message.usage.input
+        diagnostics.cacheReadTokens += message.usage.cacheRead
+        diagnostics.outputTokens += message.usage.output
         if (message.stopReason === 'error' || message.stopReason === 'aborted') {
           throw new Error(message.errorMessage ?? message.stopReason)
         }
-        text = message.content
+        category = 'invalid-response'
+        const text = message.content
           .flatMap(block => (block.type === 'text' ? block.text : []))
           .join('')
           .trim()
-        break
+
+        return { assessment: parseReviewAssessment(text), diagnostics }
       } catch {
         const delay = RETRY_DELAYS_MS[attempt]
         if (signal.aborted) {
           return aborted()
         }
         if (delay === undefined) {
-          return failure('provider-error')
+          return failure(category)
         }
         await sleep(delay, signal)
         if (signal.aborted) {
           return aborted()
         }
       }
-    }
-
-    try {
-      return { assessment: parseReviewAssessment(text), contextDiagnostics }
-    } catch {
-      return failure('invalid-response')
     }
   } finally {
     clearTimeout(timeout)
@@ -167,17 +199,18 @@ function logFailure(
   log: AuthorizerLog,
   config: AutoReviewConfig,
   details: PromptPermissionDetails,
-  result: { failure: FailureCategory; contextDiagnostics?: ContextDiagnostics },
+  result: { failure: FailureCategory; diagnostics?: ReviewDiagnostics },
+  outcome: AuthorizerVerdict['kind'],
   durationMs: number,
 ): void {
   const entry = {
     requestId: details.requestId,
     provider: config.provider,
     model: config.model,
-    outcome: 'defer',
+    outcome,
     errorCategory: result.failure,
     durationMs,
-    ...result.contextDiagnostics,
+    ...result.diagnostics,
   }
   log.review(DECISION_EVENT, entry)
   log.debug('auto_review.failure', entry)
@@ -209,13 +242,18 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): Authorizer['
       const result = await runReview(runtime, details)
       const durationMs = Math.max(0, Date.now() - startedAt)
       if ('failure' in result) {
+        // Deferring would open the human prompt the user just escaped, and Pi drops an interrupted call's verdict anyway.
+        const verdict: AuthorizerVerdict =
+          result.failure === 'cancelled'
+            ? { kind: 'deny', reason: 'The automatic review was cancelled before it finished' }
+            : { kind: 'defer' }
         circuitBreaker.recordNonDenial()
-        logFailure(log, config, details, result, durationMs)
+        logFailure(log, config, details, result, verdict.kind, durationMs)
 
-        return { kind: 'defer' }
+        return verdict
       }
 
-      const { assessment, contextDiagnostics } = result
+      const { assessment, diagnostics } = result
       log.review(DECISION_EVENT, {
         requestId: details.requestId,
         provider: config.provider,
@@ -224,7 +262,7 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): Authorizer['
         userAuthorization: assessment.userAuthorization,
         outcome: assessment.outcome,
         durationMs,
-        ...contextDiagnostics,
+        ...diagnostics,
       })
       if (assessment.outcome === 'allow') {
         circuitBreaker.recordNonDenial()
@@ -233,15 +271,16 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): Authorizer['
       }
 
       circuitBreaker.recordDenied()
-      // The host already prefixes its own attribution sentence, so this carries only the why and the two grades.
+      // The host already prefixes its own attribution sentence, so this carries the why, the two grades and upstream's
+      // instruction against working around the denial.
       return {
         kind: 'deny',
-        reason: `${assessment.rationale} (risk: ${assessment.riskLevel}, user authorization: ${assessment.userAuthorization})`,
+        reason: `${assessment.rationale} (risk: ${assessment.riskLevel}, user authorization: ${assessment.userAuthorization}). ${REJECTION_INSTRUCTIONS}`,
       }
     } catch {
       // The chain does not isolate a link that throws, so every internal failure has to leave as a verdict.
       circuitBreaker.recordNonDenial()
-      logFailure(log, config, details, { failure: 'internal-error' }, Math.max(0, Date.now() - startedAt))
+      logFailure(log, config, details, { failure: 'internal-error' }, 'defer', Math.max(0, Date.now() - startedAt))
 
       return { kind: 'defer' }
     }

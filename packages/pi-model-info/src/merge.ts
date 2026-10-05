@@ -209,6 +209,7 @@ export function mergeMetadata({ snapshot, provider, resolution, userAuthored }: 
     compat: draft.compat,
     headers: snapshot.headers,
     samplingParams: snapshot.samplingParams,
+    samplingParamsByThinkingLevel: snapshot.samplingParamsByThinkingLevel,
     promptCache: snapshot.promptCache,
     inputLimits: snapshot.inputLimits,
   })

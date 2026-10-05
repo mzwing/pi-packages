@@ -1,6 +1,6 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it } from 'vitest'
-import { renderTranscript } from '../src/transcript.js'
+import { findToolCallInput, renderTranscript } from '../src/transcript.js'
 
 function messageEntry(id: string, role: string, content: unknown, extra: Record<string, unknown> = {}): SessionEntry {
   return {
@@ -204,5 +204,22 @@ describe('transcript rendering', () => {
     expect(rendered.stats.transcriptEntriesTruncated).toBe(2)
     expect(rendered.stats.directUserEntriesTruncated).toBe(1)
     expect(rendered.stats.userInteractionEntriesTruncated).toBe(0)
+  })
+})
+
+describe('tool call input lookup', () => {
+  it('returns the complete arguments of the call with that id, and nothing for an ask without one', () => {
+    const input = { path: 'notes.md', content: 'x'.repeat(50_000) }
+    const entries = [
+      messageEntry('user', 'user', 'Write the notes.'),
+      messageEntry('assistant', 'assistant', [
+        { type: 'toolCall', name: 'bash', arguments: { command: 'ls' } },
+        { type: 'toolCall', id: 'call-1', name: 'write', arguments: input },
+      ]),
+    ]
+
+    expect(findToolCallInput(entries, 'call-1')).toEqual(input)
+    expect(findToolCallInput(entries, 'call-2')).toBeUndefined()
+    expect(findToolCallInput(entries, undefined)).toBeUndefined()
   })
 })

@@ -62,7 +62,7 @@ interface UserInteractionAnswer {
   notes?: unknown
 }
 
-function approximateTokens(text: string): number {
+export function approximateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
@@ -77,10 +77,6 @@ function truncateToCharacters(text: string, maxCharacters: number): string {
 
   // `slice(-0)` would return the whole string when the budget leaves no tail.
   return `${text.slice(0, headLength)}${tag}${text.slice(text.length - tailLength)}`
-}
-
-export function truncateToApproximateTokens(text: string, maxTokens: number): string {
-  return truncateToCharacters(text, maxTokens * 4)
 }
 
 function serializeUnknown(value: unknown): string {
@@ -252,6 +248,22 @@ function collectEntries(sessionEntries: SessionEntry[]): TranscriptEntry[] {
 
     return []
   })
+}
+
+/** The complete arguments of the assistant tool call that raised an ask, which the ask itself only previews. */
+export function findToolCallInput(sessionEntries: SessionEntry[], toolCallId: string | undefined): unknown {
+  if (toolCallId === undefined) {
+    return undefined
+  }
+  const inputs = sessionEntries.flatMap(entry => {
+    const message: MessageLike = entry.type === 'message' ? entry.message : {}
+
+    return (message.role === 'assistant' && Array.isArray(message.content) ? message.content : []).flatMap(
+      (block: ContentBlock) => (block.type === 'toolCall' && block.id === toolCallId ? [block.arguments] : []),
+    )
+  })
+
+  return inputs.at(-1)
 }
 
 function renderEntry(entry: TranscriptEntry): string {

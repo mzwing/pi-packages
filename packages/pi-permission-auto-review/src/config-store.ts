@@ -57,6 +57,13 @@ export function readScope(cwd: string, scope: ConfigScope): ScopeSnapshot {
     : { scope, cwd, path, source, valid: false, issue: parsed.issue }
 }
 
+/** The scope as it takes part in the merge: an untrusted project's file is left unread, so it can neither loosen nor break the config. */
+export function readActiveScope(cwd: string, scope: ConfigScope, projectTrusted: boolean): ScopeSnapshot {
+  return scope === 'project' && !projectTrusted
+    ? { scope, cwd, path: configPath(cwd, scope), source: undefined, valid: true, config: {} }
+    : readScope(cwd, scope)
+}
+
 function merge(global: ScopeSnapshot, project: ScopeSnapshot): LoadConfigResult {
   if (!global.valid || !project.valid) {
     const issues = [global, project].flatMap(snapshot => (snapshot.valid ? [] : `${snapshot.path}: ${snapshot.issue}`))
@@ -70,8 +77,8 @@ function merge(global: ScopeSnapshot, project: ScopeSnapshot): LoadConfigResult 
     : { config: undefined, issues: [`${project.path}: ${merged.issue}`] }
 }
 
-export function loadConfig(cwd: string): LoadConfigResult {
-  return merge(readScope(cwd, 'global'), readScope(cwd, 'project'))
+export function loadConfig(cwd: string, projectTrusted: boolean): LoadConfigResult {
+  return merge(readScope(cwd, 'global'), readActiveScope(cwd, 'project', projectTrusted))
 }
 
 function checkForConflict(snapshot: ScopeSnapshot): string | undefined {
@@ -87,7 +94,11 @@ function checkForConflict(snapshot: ScopeSnapshot): string | undefined {
     : `Config at '${snapshot.path}' changed while it was being edited; reopen the command and try again.`
 }
 
-export function saveScope(snapshot: ScopeSnapshot, draft: AutoReviewConfigFile): ConfigMutationResult {
+export function saveScope(
+  snapshot: ScopeSnapshot,
+  draft: AutoReviewConfigFile,
+  projectTrusted: boolean,
+): ConfigMutationResult {
   if (!snapshot.valid) {
     return { ok: false, message: `Cannot save invalid config at '${snapshot.path}': ${snapshot.issue}` }
   }
@@ -100,7 +111,7 @@ export function saveScope(snapshot: ScopeSnapshot, draft: AutoReviewConfigFile):
   const config = { $schema, ...fields }
   const source = `${JSON.stringify(config, null, 2)}\n`
   const replacement: ScopeSnapshot = { ...snapshot, source, config }
-  const other = readScope(snapshot.cwd, snapshot.scope === 'global' ? 'project' : 'global')
+  const other = readActiveScope(snapshot.cwd, snapshot.scope === 'global' ? 'project' : 'global', projectTrusted)
   const loadResult = snapshot.scope === 'global' ? merge(replacement, other) : merge(other, replacement)
   if (loadResult.config === undefined) {
     return { ok: false, message: loadResult.issues.join('\n') }
@@ -128,7 +139,7 @@ export function saveScope(snapshot: ScopeSnapshot, draft: AutoReviewConfigFile):
   return { ok: true, loadResult }
 }
 
-export function resetScope(snapshot: ScopeSnapshot): ConfigMutationResult {
+export function resetScope(snapshot: ScopeSnapshot, projectTrusted: boolean): ConfigMutationResult {
   if (!snapshot.valid && snapshot.source === undefined) {
     return { ok: false, message: `Cannot reset unreadable config at '${snapshot.path}': ${snapshot.issue}` }
   }
@@ -144,5 +155,5 @@ export function resetScope(snapshot: ScopeSnapshot): ConfigMutationResult {
     }
   }
 
-  return { ok: true, loadResult: loadConfig(snapshot.cwd) }
+  return { ok: true, loadResult: loadConfig(snapshot.cwd, projectTrusted) }
 }

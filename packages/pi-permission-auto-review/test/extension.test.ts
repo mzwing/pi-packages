@@ -14,6 +14,7 @@ import {
 } from '@gotgenes/pi-permission-system'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configPath } from '../src/config-store.js'
+import { EXTENSION_ID } from '../src/config.js'
 import permissionAutoReview from '../src/index.js'
 import { permissionDetails, useWorkspace, writeFile } from './helpers.js'
 
@@ -42,11 +43,22 @@ describe('permission auto-review extension', () => {
   /** A registry whose every model answers `reply`, so a reviewer's decisions are observable. */
   function reviewRegistry(reply: string) {
     const streamSimple = vi.fn(() => ({
-      result: async () => ({ role: 'assistant', content: [{ type: 'text', text: reply }], stopReason: 'stop' }),
+      result: async () => ({
+        role: 'assistant',
+        content: [{ type: 'text', text: reply }],
+        stopReason: 'stop',
+        usage: { input: 0, output: 0, cacheRead: 0 },
+      }),
     }))
     const registry = {
       getProvider: (id: string) => ({ id, getModels: () => [] }),
-      find: (provider: string, id: string) => ({ id, provider, api: 'openai-responses', reasoning: false }),
+      find: (provider: string, id: string) => ({
+        id,
+        provider,
+        api: 'openai-responses',
+        reasoning: false,
+        contextWindow: 200_000,
+      }),
       getAll: () => [],
       streamSimple,
     } as unknown as ModelRegistry
@@ -54,7 +66,7 @@ describe('permission auto-review extension', () => {
     return { registry, streamSimple }
   }
 
-  function start(registry: ModelRegistry = reviewRegistry(DENY).registry) {
+  function start(registry: ModelRegistry = reviewRegistry(DENY).registry, projectTrusted = true) {
     const handlers = new Map<string, Handler[]>()
     const eventHandlers = new Map<string, Handler[]>()
     let command: Omit<RegisteredCommand, 'name' | 'sourceInfo'> | undefined
@@ -75,16 +87,21 @@ describe('permission auto-review extension', () => {
         handler(...arguments_)
       }
     }
+    const setStatus = vi.fn()
     const context = {
       cwd: workspace.cwd,
       modelRegistry: registry,
       sessionManager: { getBranch: () => [], getSessionId: () => SESSION_ID },
+      ui: { setStatus },
+      isProjectTrusted: () => projectTrusted,
     }
     const notify = vi.fn()
 
     return {
       emit,
       start: () => emit('session_start', {}, context),
+      shutdown: () => emit('session_shutdown', {}, context),
+      setStatus,
       ready(sessionId: string | null = SESSION_ID) {
         for (const handler of eventHandlers.get(PERMISSIONS_READY_CHANNEL) ?? []) {
           handler({ sessionId, adjudicatesLocally: true } satisfies PermissionsReadyEvent)
@@ -124,7 +141,7 @@ describe('permission auto-review extension', () => {
     harness.ready()
     expect(registerAuthorizer).toHaveBeenCalledExactlyOnceWith('auto-review', expect.any(Function))
 
-    harness.emit('session_shutdown')
+    harness.shutdown()
     expect(dispose).toHaveBeenCalledOnce()
   })
 
@@ -159,7 +176,7 @@ describe('permission auto-review extension', () => {
     expect(childRegister).toHaveBeenCalledOnce()
 
     // Each instance holds its own handle, so a shutdown never disposes another node's registration.
-    child.emit('session_shutdown')
+    child.shutdown()
     expect(childDispose).toHaveBeenCalledOnce()
     expect(rootDispose).not.toHaveBeenCalled()
   })
@@ -194,6 +211,41 @@ describe('permission auto-review extension', () => {
     const { verdict, entry } = await review(registerAuthorizer.mock.calls[0]?.[1])
     expect(verdict).toEqual({ kind: 'defer' })
     expect(entry).toEqual(['auto_review.decision', expect.objectContaining({ errorCategory: 'config-invalid' })])
+    expect(harness.setStatus).toHaveBeenLastCalledWith(EXTENSION_ID, 'auto-review inactive: invalid config')
+  })
+
+  it('ignores the config of a project Pi does not trust, and warns that it does', async () => {
+    writeFile(configPath(workspace.cwd, 'project'), { model: 'project-model' })
+    const registerAuthorizer = vi.fn((_name: string, _authorize: Authorize) => vi.fn())
+    publish(registerAuthorizer)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const harness = start(reviewRegistry(DENY).registry, false)
+
+    harness.start()
+    harness.ready()
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('is ignored until Pi trusts this project'))
+    warn.mockRestore()
+
+    expect((await review(registerAuthorizer.mock.calls[0]?.[1])).entry?.[1]).toMatchObject({
+      model: 'codex-auto-review',
+    })
+  })
+
+  it('shows in the footer whether the reviewer is registered and how it has decided', async () => {
+    const registerAuthorizer = vi.fn((_name: string, _authorize: Authorize) => vi.fn())
+    publish(registerAuthorizer)
+    const harness = start()
+
+    harness.start()
+    expect(harness.setStatus).toHaveBeenLastCalledWith(EXTENSION_ID, 'auto-review inactive')
+    harness.ready()
+    expect(harness.setStatus).toHaveBeenLastCalledWith(EXTENSION_ID, 'auto-review ready')
+
+    await review(registerAuthorizer.mock.calls[0]?.[1])
+    expect(harness.setStatus).toHaveBeenLastCalledWith(EXTENSION_ID, 'auto-review ready · 1 denied')
+
+    harness.shutdown()
+    expect(harness.setStatus).toHaveBeenLastCalledWith(EXTENSION_ID, undefined)
   })
 
   it('hot-swaps the reviewer generation after a config reset, closing the circuit', async () => {
@@ -226,7 +278,7 @@ describe('permission auto-review extension', () => {
     expect((await review(second)).entry?.[1]).toMatchObject({ model: 'codex-auto-review', outcome: 'deny' })
     expect(streamSimple).toHaveBeenCalledTimes(4)
 
-    harness.emit('session_shutdown')
+    harness.shutdown()
     expect(secondDispose).toHaveBeenCalledOnce()
   })
 
@@ -282,7 +334,7 @@ describe('permission auto-review extension', () => {
     expect(retried).toBe(rejected)
     expect(retried).not.toBe(first)
 
-    harness.emit('session_shutdown')
+    harness.shutdown()
     expect(secondDispose).toHaveBeenCalledOnce()
   })
 

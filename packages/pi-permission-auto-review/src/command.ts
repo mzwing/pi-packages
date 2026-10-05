@@ -1,7 +1,7 @@
 import type { ConfigScope, LoadConfigResult } from './config-store.js'
 import type { AutoReviewConfig, AutoReviewConfigFile } from './config.js'
 import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
-import { configPath, loadConfig, readScope, resetScope, saveScope } from './config-store.js'
+import { configPath, loadConfig, readActiveScope, readScope, resetScope, saveScope } from './config-store.js'
 import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, MAX_TIMEOUT_MS, REASONING_LEVELS } from './config.js'
 
 const COMMAND_NAME = 'permission-auto-review'
@@ -212,9 +212,15 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
   if (scope === undefined) {
     return
   }
+  const projectTrusted = ctx.isProjectTrusted()
+  if (scope === 'project' && !projectTrusted) {
+    ctx.ui.notify('Project config is ignored until Pi trusts this project.', 'warning')
+
+    return
+  }
 
   const selected = readScope(ctx.cwd, scope)
-  const other = readScope(ctx.cwd, scope === 'global' ? 'project' : 'global')
+  const other = readActiveScope(ctx.cwd, scope === 'global' ? 'project' : 'global', projectTrusted)
   const cannotEdit = (snapshot: { path: string; issue: string }): void => {
     ctx.ui.notify(
       `Cannot edit config at '${snapshot.path}': ${snapshot.issue}. Use reset to remove it or fix it manually.`,
@@ -247,7 +253,7 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
       return
     }
     if (choice === SAVE) {
-      const saved = saveScope(selected, draft)
+      const saved = saveScope(selected, draft, projectTrusted)
       if (!saved.ok) {
         ctx.ui.notify(saved.message, 'error')
         continue
@@ -268,10 +274,11 @@ async function openSettingsMenu(ctx: ExtensionCommandContext, controller: AutoRe
 }
 
 function showConfig(ctx: ExtensionCommandContext, active: AutoReviewConfig | undefined): void {
+  const projectTrusted = ctx.isProjectTrusted()
   const global = readScope(ctx.cwd, 'global')
-  const project = readScope(ctx.cwd, 'project')
+  const project = readActiveScope(ctx.cwd, 'project', projectTrusted)
   if (active === undefined || !global.valid || !project.valid) {
-    const issues = loadConfig(ctx.cwd)
+    const issues = loadConfig(ctx.cwd, projectTrusted)
       .issues.map(issue => `\n${issue}`)
       .join('')
     ctx.ui.notify(`Automatic review is disabled because the active config is invalid.${issues}`, 'warning')
@@ -281,7 +288,11 @@ function showConfig(ctx: ExtensionCommandContext, active: AutoReviewConfig | und
 
   const layers = { global: global.config, project: project.config }
   const lines = FIELDS.map(field => `${field}=${formatValue(field, active[field])} (${originOf(layers, field)})`)
-  ctx.ui.notify(`permission-auto-review:\n${lines.join('\n')}\nglobal=${global.path}\nproject=${project.path}`, 'info')
+  const ignored = projectTrusted ? '' : ' (ignored until Pi trusts this project)'
+  ctx.ui.notify(
+    `permission-auto-review:\n${lines.join('\n')}\nglobal=${global.path}\nproject=${project.path}${ignored}`,
+    'info',
+  )
 }
 
 async function resetConfig(
@@ -313,7 +324,7 @@ async function resetConfig(
   if (!confirmed) {
     return
   }
-  const reset = resetScope(snapshot)
+  const reset = resetScope(snapshot, ctx.isProjectTrusted())
   if (!reset.ok) {
     ctx.ui.notify(reset.message, 'error')
 

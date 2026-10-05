@@ -2,9 +2,6 @@ import type { AutoReviewConfig } from './config.js'
 import type { RenderedTranscript } from './transcript.js'
 import type { PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { buildSystemPrompt } from './policy.js'
-import { truncateToApproximateTokens } from './transcript.js'
-
-const MAX_ACTION_TOKENS = 10_000
 
 const PERMISSION_FIELDS = [
   'requestId',
@@ -31,10 +28,12 @@ export interface ReviewPrompt {
   userPrompt: string
 }
 
+/** The request is never truncated: a reviewer must not approve an action it saw only in part. */
 export function buildReviewPrompt(
   config: AutoReviewConfig,
   transcript: RenderedTranscript,
   details: PromptPermissionDetails,
+  toolInput?: unknown,
 ): ReviewPrompt {
   const renderedTranscript =
     transcript.entries.length > 0
@@ -45,7 +44,7 @@ export function buildReviewPrompt(
   const request = Object.fromEntries(
     PERMISSION_FIELDS.flatMap(field => (details[field] === undefined ? [] : [[field, details[field]]])),
   )
-  const action = truncateToApproximateTokens(JSON.stringify(request, null, 2), MAX_ACTION_TOKENS)
+  const action = JSON.stringify(toolInput === undefined ? request : { ...request, toolInput }, null, 2)
 
   return {
     systemPrompt: buildSystemPrompt(config),

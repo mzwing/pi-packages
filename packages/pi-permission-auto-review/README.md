@@ -17,7 +17,7 @@ pi install npm:@gotgenes/pi-permission-system
 pi install npm:@mzwing/pi-permission-auto-review
 ```
 
-Requires Pi 0.99.1 or later and `@gotgenes/pi-permission-system` 33.x – 36.x.
+Requires Pi 1.0.0 or later and `@gotgenes/pi-permission-system` 37.x – 39.x.
 
 ## Usage
 
@@ -33,9 +33,11 @@ The default model reuses Pi's `openai-codex` login, listed as "OpenAI Codex (leg
 
 `/permission-auto-review` edits the config interactively and applies it without reloading the session. Its subcommands are `show`, `path`, `reset [global|project]` and `help`.
 
+The footer shows whether the reviewer is registered and how many asks it has allowed, denied or deferred in the session.
+
 ## Configuration
 
-Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.pi/extensions/pi-permission-auto-review/config.json` are merged, the project over the global one. An invalid config disables automatic decisions.
+Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.pi/extensions/pi-permission-auto-review/config.json` are merged, the project over the global one; the project file is read only once Pi trusts the project. An invalid config disables automatic decisions.
 
 | Field                   | Default             | Description                                             |
 | ----------------------- | ------------------- | ------------------------------------------------------- |
@@ -54,11 +56,13 @@ Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.p
 import {
   buildReviewPrompt,
   DEFAULT_CONFIG,
+  findToolCallInput,
   parseReviewAssessment,
   renderTranscript,
 } from '@mzwing/pi-permission-auto-review/review'
 
-const prompt = buildReviewPrompt(DEFAULT_CONFIG, renderTranscript(sessionEntries), details)
+const toolInput = findToolCallInput(sessionEntries, details.toolCallId)
+const prompt = buildReviewPrompt(DEFAULT_CONFIG, renderTranscript(sessionEntries), details, toolInput)
 const assessment = parseReviewAssessment(modelReply)
 ```
 

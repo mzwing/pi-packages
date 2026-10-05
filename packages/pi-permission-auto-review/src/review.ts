@@ -4,6 +4,6 @@ export { buildSystemPrompt, FIXED_REVIEW_PROTOCOL, POLICY_REVISION } from './pol
 export type { ReviewPrompt } from './prompt.js'
 export { buildReviewPrompt } from './prompt.js'
 export type { RenderedTranscript } from './transcript.js'
-export { renderTranscript } from './transcript.js'
+export { findToolCallInput, renderTranscript } from './transcript.js'
 export type { ReviewAssessment } from './verdict.js'
 export { parseReviewAssessment } from './verdict.js'

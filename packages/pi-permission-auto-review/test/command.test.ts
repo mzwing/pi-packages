@@ -13,8 +13,8 @@ describe('/permission-auto-review', () => {
   const workspace = useWorkspace()
 
   /** Answers the settings menu with `picks` in order, then saves; other dialogs come from `answers` by title. */
-  function setup(picks: string[], answers: Record<string, string> = {}) {
-    let activeConfig: AutoReviewConfig | undefined = loadConfig(workspace.cwd).config
+  function setup(picks: string[], answers: Record<string, string> = {}, projectTrusted = true) {
+    let activeConfig: AutoReviewConfig | undefined = loadConfig(workspace.cwd, projectTrusted).config
     const applyConfig = vi.fn((result: LoadConfigResult) => {
       activeConfig = result.config
 
@@ -48,6 +48,7 @@ describe('/permission-auto-review', () => {
       modelRegistry: { getAll: () => [] },
       ui: { select, input: async () => answers['input'], notify },
       waitForIdle: async () => {},
+      isProjectTrusted: () => projectTrusted,
       reload,
     } as unknown as ExtensionCommandContext
 
@@ -101,5 +102,19 @@ describe('/permission-auto-review', () => {
     expect(message).toContain('reasoning=high (global)')
     expect(message).toContain('additionalPolicy=configured (global)')
     expect(message).not.toContain('Private policy contents')
+  })
+
+  it('keeps an untrusted project out of the menu and marks it ignored in show', async () => {
+    writeFile(configPath(workspace.cwd, 'project'), { reasoning: 'high' })
+    const harness = setup([], { 'Select configuration scope': 'Project configuration' }, false)
+    await harness.run('')
+
+    expect(harness.notify).toHaveBeenCalledWith('Project config is ignored until Pi trusts this project.', 'warning')
+    expect(harness.menus).toHaveLength(0)
+
+    await harness.run('show')
+    const message = String(harness.notify.mock.calls[1]?.[0])
+    expect(message).toContain('reasoning=low (default)')
+    expect(message).toContain('(ignored until Pi trusts this project)')
   })
 })

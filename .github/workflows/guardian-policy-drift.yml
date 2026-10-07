@@ -14,6 +14,12 @@ permissions:
 env:
   DRIFT_LABEL: guardian-policy-drift
 
+defaults:
+  run:
+    # A custom shell string runs a bare `bash {0}`; only the built-in `bash`
+    # shell adds -eo pipefail. Spell it out so a failing command aborts the step.
+    shell: devenv shell -- bash -eo pipefail {0}
+
 jobs:
   drift:
     name: Check upstream Guardian policy
@@ -22,16 +28,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          check-latest: true
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
+      - name: Use the devenv cache
+        uses: cachix/cachix-action@v17
         with:
-          cache: true
+          name: devenv
+
+      - name: Install devenv
+        shell: bash
+        run: nix profile add nixpkgs#devenv
+
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm i --frozen-lockfile

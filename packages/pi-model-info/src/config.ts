@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getAgentDir } from '@earendil-works/pi-coding-agent'
 import { z } from 'zod'
-import { describeError, EXTENSION_ID } from './util.js'
 
+export const EXTENSION_ID = 'pi-model-info'
 const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-model-info/schemas/config.schema.json'
 
@@ -137,6 +137,11 @@ export interface LoadedConfig {
   /** `undefined` when either scope is unusable, which leaves the extension inert. */
   config: ResolvedConfig | undefined
   issues: string[]
+}
+
+// Not imported from util.ts: scripts/generate-schema.ts runs this file under Node, which cannot resolve `.js` imports of sources.
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function formatIssues(error: z.ZodError): string {

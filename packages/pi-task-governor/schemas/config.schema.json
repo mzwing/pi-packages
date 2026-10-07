@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-task-governor/schemas/config.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspaceRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "maxExecutors": {
+      "default": 3,
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "defaultBookmark": {
+      "default": "main",
+      "type": "string",
+      "minLength": 1
+    },
+    "roles": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "coordinator": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "executor": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "thinking": {
+              "type": "string",
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "developer": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "thinking": {
+              "type": "string",
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            },
+            "maxTurns": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "reviewer": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "thinking": {
+              "type": "string",
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            },
+            "maxTurns": {
+              "default": 40,
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "env": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "auto",
+          "type": "string",
+          "enum": ["auto", "direnv", "flake", "none"]
+        },
+        "setup": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "globalChecks": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "check": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["statement", "check"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

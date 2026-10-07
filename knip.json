@@ -3,6 +3,10 @@
   "workspaces": {
     "packages/pi-codex-downgrade-detector": {},
     "packages/pi-model-info": {},
-    "packages/pi-permission-auto-review": {}
+    "packages/pi-permission-auto-review": {},
+    "packages/pi-session-hub": {},
+    "packages/pi-task-governor": {
+      "ignoreBinaries": ["jj"]
+    }
   }
 }

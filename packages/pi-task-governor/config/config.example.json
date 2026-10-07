@@ -1,0 +1,16 @@
+{
+  "$schema": "../schemas/config.schema.json",
+  "maxExecutors": 3,
+  "defaultBookmark": "main",
+  "roles": {
+    "coordinator": { "instructions": "Prefer one task per package, so parallel tasks rarely touch the same files." },
+    "executor": { "model": "deepseek/deepseek-v4-pro", "thinking": "high" },
+    "developer": { "model": "openai-codex/gpt-6.1-sol", "maxTurns": 100 },
+    "reviewer": { "model": "anthropic/claude-opus-5-5", "thinking": "high", "maxTurns": 40 }
+  },
+  "env": {
+    "provider": "auto",
+    "setup": ["pnpm install --frozen-lockfile"]
+  },
+  "globalChecks": [{ "statement": "The project type-checks", "check": "pnpm typecheck" }]
+}

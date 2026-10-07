@@ -1,6 +1,6 @@
 {
   "name": "@mzwing/pi-task-governor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runs Pi work as a governed task tree: independent executor sessions, jj workspaces and evidence-backed sign-off",
   "keywords": [
     "jj",

@@ -1,5 +1,23 @@
 # @mzwing/pi-task-governor
 
+## 0.3.0
+
+### Minor Changes
+
+- [`63a62b9`](https://github.com/mzwing/pi-packages/commit/63a62b9d614d78b52d8e348d128ee22e081d811d) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-task-governor): remove regex based path matching disabling commands
+  
+  The coordinator is the user's own session in the main workspace, so its bash runs `git`, `jj` and `pi` like any other command, and `/governor unlock` there says it has nothing to lift. Other governed sessions still find them blocked by the shims on PATH, but their commands are no longer matched as text against paths to the binaries, `nix run`, and `.git` or `.jj`, which refused harmless commands such as `grep --exclude-dir=.git` and `ls packages/pi`.
+
+### Patch Changes
+
+- [`3729f3f`](https://github.com/mzwing/pi-packages/commit/3729f3fb3024d055b0e222efc706523824640d3e) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-session-hub, pi-task-governor): show session mail when it arrives, not after the user's next message
+  
+  Mail that does not wake its recipient, and mail waiting when a session starts, went through Pi's `nextTurn` delivery, which keeps a message out of sight until the user sends one. Such mail is now written to the session at once, or when a busy recipient's turn ends, and its model reads it in its next request. Steered mail that Pi drops when a run is stopped in the TUI is written to the session afterwards, without starting a turn.
+  
+  pi-task-governor's notices that do not wake the coordinator, and the task board that `/governor handoff` puts in the new session, appear the same way.
+- Updated dependencies [[`3729f3f`](https://github.com/mzwing/pi-packages/commit/3729f3fb3024d055b0e222efc706523824640d3e)]:
+  - @mzwing/pi-session-hub@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

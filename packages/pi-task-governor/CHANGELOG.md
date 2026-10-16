@@ -1,5 +1,37 @@
 # @mzwing/pi-task-governor
 
+## 0.4.0
+
+### Minor Changes
+
+- [`ca2237f`](https://github.com/mzwing/pi-packages/commit/ca2237f936946c535520ef45a952e593c64dc451) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-task-governor): work each task in fresh executor sessions instead of resuming one
+  
+  A fresh executor session takes over whenever the last one hands off with `task_handoff`, reaches `roles.executor.maxTurns` turns, gets the coordinator's answer, or stops early. It starts from the task board, the task's latest events and the note the executor keeps on it with `task_note`, and can read the sessions before it with `session_read`.
+  
+  After upgrading, run `/governor coordinate` again in the coordinating session, so the config its store keeps gains the turn limits of the coordinator and the executor.
+
+- [`3093b7d`](https://github.com/mzwing/pi-packages/commit/3093b7df0d18854a1402278d610536d1f096c3e7) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-session-hub, pi-task-governor): give each task its own `TMPDIR`
+  
+  A task's executor, developers, reviewers, checks and setup commands use a temporary directory beside its workspace, which is removed with the workspace. For this, pi-session-hub's `spawnSession` takes `env`, variables set in the new session's environment over the ones it inherits.
+
+- [`ed5e055`](https://github.com/mzwing/pi-packages/commit/ed5e055292f8bf64bdc9fe0ffc6641f9571ca281) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-task-governor)!: require the coordinator's sign-off before a reviewed task merges
+  
+  A root task that passes its review now waits for the coordinator, which receives the change, its reviewer's evidence for every criterion and the executor's note, and approves the task with `task_approve` or sends it back with findings through `task_reject`. Approved tasks merge one at a time from the coordinator, re-running their checks after a rebase; a task sent back, or whose merge conflicts or breaks a check, goes to a fresh executor session. Only the merge that finishes the last task wakes the coordinator, to report the outcome.
+  
+  BREAKING CHANGE: a reviewed root task no longer merges on its own. It merges once the coordinator approves it, from the coordinator's session, so reviewed tasks wait while no coordinator runs.
+
+- [`9400b19`](https://github.com/mzwing/pi-packages/commit/9400b1952cc2595e21162b3cac96f5069ba66f21) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-task-governor): let a task wait for other tasks to merge before it starts
+  
+  `task_declare` takes `after`, the root tasks of the same bookmark that must be merged first, so the coordinator can plan a whole change and declare it at once. Each task starts as soon as the tasks it waits for are merged, and cancelling a task cancels the tasks waiting for it.
+
+### Patch Changes
+
+- [`22df74c`](https://github.com/mzwing/pi-packages/commit/22df74cda616ebaf364460008d356cb85b485ffd) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-task-governor): show the coordinator's handoff reminder when another extension owns compaction
+  
+  The reminder to run `/governor handoff` counted compactions, which never happen once an extension such as pi-magic-context takes compaction over. It now comes after `roles.coordinator.maxTurns` turns, and the session `/governor handoff` opens learns which session it took over from, to read with `session_read`.
+- Updated dependencies [[`3093b7d`](https://github.com/mzwing/pi-packages/commit/3093b7df0d18854a1402278d610536d1f096c3e7)]:
+  - @mzwing/pi-session-hub@0.3.0
+
 ## 0.3.1
 
 ### Patch Changes

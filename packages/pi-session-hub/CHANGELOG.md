@@ -1,5 +1,13 @@
 # @mzwing/pi-session-hub
 
+## 0.3.0
+
+### Minor Changes
+
+- [`3093b7d`](https://github.com/mzwing/pi-packages/commit/3093b7df0d18854a1402278d610536d1f096c3e7) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-session-hub, pi-task-governor): give each task its own `TMPDIR`
+  
+  A task's executor, developers, reviewers, checks and setup commands use a temporary directory beside its workspace, which is removed with the workspace. For this, pi-session-hub's `spawnSession` takes `env`, variables set in the new session's environment over the ones it inherits.
+
 ## 0.2.2
 
 ### Patch Changes

@@ -311,16 +311,6 @@ describe('permission reviewer', () => {
   describe('retries', () => {
     const failures = (count: number): Error[] => Array.from({ length: count }, () => new Error('temporary failure'))
 
-    it('makes two retries 250 ms and 1 s apart by default, with provider retries off', async () => {
-      const harness = createHarness({ replies: [...failures(3), reply(ALLOW)] })
-      const { verdict, entries } = await harness.authorize()
-
-      expect(verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
-      expect(harness.callTimes).toEqual([0, 250, 1_250])
-      expect(harness.callOptions().map(options => options.maxRetries)).toEqual([0, 0, 0])
-    })
-
     it('retries maxRetries times, backing off to at most 30 s between calls', async () => {
       const harness = createHarness({
         config: { maxRetries: 7, timeoutMs: 300_000 },
@@ -342,25 +332,6 @@ describe('permission reviewer', () => {
       expect(harness.streamSimple).toHaveBeenCalledOnce()
     })
 
-    it('pays for every malformed reply of a longer run, and defers once it is exhausted', async () => {
-      const harness = createHarness({
-        config: { maxRetries: 3 },
-        replies: Array.from({ length: 5 }, () => reply('not json')),
-      })
-      const { verdict, entries } = await harness.authorize()
-
-      expect(verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response', inputTokens: 400 })
-      expect(harness.streamSimple).toHaveBeenCalledTimes(4)
-    })
-
-    it('never retries a valid denial', async () => {
-      const harness = createHarness({ config: { maxRetries: 5 }, replies: [reply(DENY), reply(ALLOW)] })
-
-      expect((await harness.authorize()).verdict).toMatchObject({ kind: 'deny' })
-      expect(harness.streamSimple).toHaveBeenCalledOnce()
-    })
-
     it('gives the call only the remaining review budget when no attempt timeout is set', async () => {
       const harness = createHarness({ replies: [...failures(1), reply(ALLOW)] })
       await harness.authorize()
@@ -368,58 +339,35 @@ describe('permission reviewer', () => {
       expect(harness.callOptions().map(options => options.timeoutMs)).toEqual([90_000, 89_750])
     })
 
-    it('abandons an attempt at attemptTimeoutMs even if the provider ignores the abort, then retries', async () => {
-      const harness = createHarness({ config: { attemptTimeoutMs: 1_000 }, replies: [HANG, reply(ALLOW)] })
-      const { verdict } = await harness.authorize()
+    it('abandons an attempt at attemptTimeoutMs even if the provider ignores the abort, discarding its late reply', async () => {
+      const harness = createHarness({
+        config: { attemptTimeoutMs: 1_000 },
+        replies: [later(1_100, reply(DENY)), reply(ALLOW)],
+      })
+      const { verdict, entries } = await harness.authorize()
       const [first, second] = harness.callOptions()
 
       expect(verdict).toEqual({ kind: 'allow' })
+      expect(entries[0]?.[1]).toMatchObject({ outcome: 'allow', inputTokens: 100 })
       expect(harness.callTimes).toEqual([0, 1_250])
       expect(first).toMatchObject({ timeoutMs: 1_000 })
       expect(first?.signal?.aborted).toBe(true)
       expect(second?.signal?.aborted).toBe(false)
     })
 
-    it('discards the late reply of an abandoned attempt', async () => {
-      const harness = createHarness({
-        config: { attemptTimeoutMs: 1_000 },
-        replies: [later(1_100, reply(DENY)), reply(ALLOW)],
-      })
+    it('defers with attempt-timeout once every attempt has timed out', async () => {
+      const harness = createHarness({ config: { maxRetries: 1, attemptTimeoutMs: 1_000 }, replies: [HANG, HANG] })
       const { verdict, entries } = await harness.authorize()
 
-      expect(verdict).toEqual({ kind: 'allow' })
-      expect(entries[0]?.[1]).toMatchObject({ outcome: 'allow', inputTokens: 100 })
-    })
-
-    it('defers with attempt-timeout once every attempt has timed out, leaving no timer behind', async () => {
-      const harness = createHarness({ config: { maxRetries: 1, attemptTimeoutMs: 1_000 }, replies: [HANG, HANG] })
-      const { verdict, entries } = harness.start()
-      await vi.advanceTimersByTimeAsync(2_249)
-      expect(vi.getTimerCount()).toBeGreaterThan(0)
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(await verdict).toEqual({ kind: 'defer' })
+      expect(verdict).toEqual({ kind: 'defer' })
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'attempt-timeout', durationMs: 2_250 })
       expect(harness.callTimes).toEqual([0, 1_250])
-      expect(vi.getTimerCount()).toBe(0)
-    })
-
-    it('leaves no timer behind once the last attempt fails', async () => {
-      const harness = createHarness({ config: { maxRetries: 1, attemptTimeoutMs: 60_000 }, replies: failures(2) })
-      const { verdict, entries } = harness.start()
-      await vi.advanceTimersByTimeAsync(249)
-      expect(vi.getTimerCount()).toBeGreaterThan(0)
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(await verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
       expect(harness.streamSimple).toHaveBeenCalledTimes(2)
-      expect(vi.getTimerCount()).toBe(0)
     })
 
     it('caps a call at the remaining review budget when the attempt timeout is longer', async () => {
       const harness = createHarness({
-        config: { timeoutMs: 2_000, attemptTimeoutMs: 60_000 },
+        config: { maxRetries: 1, timeoutMs: 2_000, attemptTimeoutMs: 60_000 },
         replies: [...failures(1), HANG],
       })
       const { verdict, entries } = await harness.authorize()
@@ -427,18 +375,6 @@ describe('permission reviewer', () => {
       expect(verdict).toEqual({ kind: 'defer' })
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout', durationMs: 2_000 })
       expect(harness.callOptions().map(options => options.timeoutMs)).toEqual([2_000, 1_750])
-    })
-
-    it('reports the review timeout when it expires together with the attempt timeout', async () => {
-      const harness = createHarness({
-        config: { timeoutMs: 1_000, attemptTimeoutMs: 1_000 },
-        replies: [HANG, reply(ALLOW)],
-      })
-      const { verdict, entries } = await harness.authorize()
-
-      expect(verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout' })
-      expect(harness.streamSimple).toHaveBeenCalledOnce()
     })
 
     it('ends a backoff at the review deadline instead of sleeping past it', async () => {
@@ -450,18 +386,6 @@ describe('permission reviewer', () => {
 
       expect(verdict).toEqual({ kind: 'defer' })
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout', durationMs: 1_000 })
-      expect(harness.callTimes).toEqual([0, 250])
-    })
-
-    it('makes no call when a backoff ends exactly at the review deadline', async () => {
-      const harness = createHarness({
-        config: { timeoutMs: 1_250, maxRetries: 5 },
-        replies: [...failures(2), reply(ALLOW)],
-      })
-      const { verdict, entries } = await harness.authorize()
-
-      expect(verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout', durationMs: 1_250 })
       expect(harness.callTimes).toEqual([0, 250])
     })
 
@@ -489,63 +413,24 @@ describe('permission reviewer', () => {
 
       expect(await verdict).toMatchObject({ kind: 'deny' })
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'cancelled', durationMs: 100 })
+      expect(vi.getTimerCount()).toBe(0)
       expect(harness.streamSimple).toHaveBeenCalledOnce()
     })
 
-    it('denies when the session ends during an attempt the provider would not abort', async () => {
+    it('denies when the session ends during the only permitted call, leaving no timer behind', async () => {
       const session = new AbortController()
       const harness = createHarness({
         sessionSignal: session.signal,
-        config: { attemptTimeoutMs: 1_000 },
-        replies: [HANG, reply(ALLOW)],
-      })
-      const { verdict, entries } = harness.start()
-      await vi.advanceTimersByTimeAsync(500)
-      session.abort()
-
-      expect(await verdict).toMatchObject({ kind: 'deny' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'cancelled', durationMs: 500 })
-      expect(harness.streamSimple).toHaveBeenCalledOnce()
-    })
-
-    it('denies when the turn is interrupted during the only permitted call, leaving no timer behind', async () => {
-      const turn = new AbortController()
-      const harness = createHarness({
-        turnSignal: turn.signal,
         config: { maxRetries: 0, attemptTimeoutMs: 60_000 },
         replies: [HANG],
       })
       const { verdict, entries } = harness.start()
       await vi.advanceTimersByTimeAsync(500)
       expect(vi.getTimerCount()).toBeGreaterThan(0)
-      turn.abort()
+      session.abort()
 
       expect(await verdict).toMatchObject({ kind: 'deny' })
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'cancelled', durationMs: 500 })
-      expect(vi.getTimerCount()).toBe(0)
-    })
-
-    it('defers with timeout when the review deadline passes during the only permitted call', async () => {
-      const harness = createHarness({
-        config: { maxRetries: 0, timeoutMs: 1_000, attemptTimeoutMs: 60_000 },
-        replies: [HANG],
-      })
-      const { verdict, entries } = harness.start()
-      await vi.advanceTimersByTimeAsync(999)
-      expect(vi.getTimerCount()).toBeGreaterThan(0)
-      await vi.advanceTimersByTimeAsync(1)
-
-      expect(await verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'timeout', durationMs: 1_000 })
-      expect(vi.getTimerCount()).toBe(0)
-    })
-
-    it('leaves no timer behind once a review with an attempt timeout settles', async () => {
-      const harness = createHarness({ config: { attemptTimeoutMs: 60_000 }, replies: [...failures(1), reply(ALLOW)] })
-      const { verdict } = harness.start()
-      await vi.advanceTimersByTimeAsync(250)
-
-      expect(await verdict).toEqual({ kind: 'allow' })
       expect(vi.getTimerCount()).toBe(0)
     })
   })

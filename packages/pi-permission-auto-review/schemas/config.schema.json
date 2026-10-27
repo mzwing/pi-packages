@@ -28,6 +28,17 @@
       "exclusiveMinimum": 0,
       "maximum": 300000
     },
+    "maxRetries": {
+      "default": 2,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20
+    },
+    "attemptTimeoutMs": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 300000
+    },
     "includeBaselinePolicy": {
       "default": true,
       "type": "boolean"

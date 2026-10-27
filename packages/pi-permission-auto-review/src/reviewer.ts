@@ -9,13 +9,15 @@ import type {
   AuthorizerVerdict,
   PromptPermissionDetails,
 } from '@gotgenes/pi-permission-system'
+import { DEFAULT_MAX_RETRIES } from './config.js'
 import { resolveReviewModel } from './model.js'
 import { POLICY_REVISION } from './policy.js'
 import { buildReviewPrompt } from './prompt.js'
 import { approximateTokens, findToolCallInput, renderTranscript } from './transcript.js'
 import { parseReviewAssessment } from './verdict.js'
 
-const RETRY_DELAYS_MS = [250, 1_000]
+const FIRST_RETRY_DELAY_MS = 250
+const MAX_RETRY_DELAY_MS = 30_000
 /** Room left for reasoning and the verdict when a prompt is admitted; pi-ai keeps its own margin on top. */
 const OUTPUT_RESERVE_TOKENS = 16_384
 const DECISION_EVENT = 'auto_review.decision'
@@ -32,6 +34,7 @@ type FailureCategory =
   | 'input-budget-exceeded'
   | 'provider-error'
   | 'invalid-response'
+  | 'attempt-timeout'
   | 'timeout'
   | 'cancelled'
   | 'internal-error'
@@ -67,17 +70,17 @@ function abortError(): Error {
 
 /** Resolves early on abort; the caller checks the signal. */
 async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
-  await new Promise<void>(resolve => {
-    const timer = setTimeout(resolve, milliseconds)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        resolve()
-      },
-      { once: true },
-    )
-  })
+  const { promise, resolve } = Promise.withResolvers<void>()
+  const onAbort = (): void => resolve()
+  const timer = setTimeout(resolve, milliseconds)
+  signal.addEventListener('abort', onAbort, { once: true })
+  await promise
+  clearTimeout(timer)
+  signal.removeEventListener('abort', onAbort)
+}
+
+function retryDelay(retryIndex: number): number {
+  return Math.min(MAX_RETRY_DELAY_MS, FIRST_RETRY_DELAY_MS * 4 ** retryIndex)
 }
 
 /** A provider is not bound to honour the abort signal promptly, so the timeout is enforced here. */
@@ -108,14 +111,14 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
   const timeoutController = new AbortController()
   const timeout = setTimeout(() => timeoutController.abort(), config.timeoutMs)
   const turnSignal = context.signal
-  const signal = AbortSignal.any([
+  const reviewSignal = AbortSignal.any([
     timeoutController.signal,
     runtime.sessionSignal,
     ...(turnSignal === undefined ? [] : [turnSignal]),
   ])
 
   try {
-    if (signal.aborted) {
+    if (reviewSignal.aborted) {
       return { failure: 'cancelled' }
     }
     const branch = context.sessionManager.getBranch()
@@ -143,7 +146,18 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
       return failure('input-budget-exceeded')
     }
 
+    const maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES
     for (let attempt = 0; ; attempt += 1) {
+      const remainingMs = config.timeoutMs - (Date.now() - startedAt)
+      if (remainingMs <= 0) {
+        return failure('timeout')
+      }
+      const attemptController = new AbortController()
+      const attemptTimeout =
+        config.attemptTimeoutMs === undefined
+          ? undefined
+          : setTimeout(() => attemptController.abort(), config.attemptTimeoutMs)
+      const attemptSignal = AbortSignal.any([reviewSignal, attemptController.signal])
       let category: FailureCategory = 'provider-error'
       try {
         // The registry resolves the provider's authentication per request, so an unusable login lands here.
@@ -155,14 +169,14 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
           },
           {
             maxRetries: 0,
-            signal,
-            timeoutMs: Math.max(1, config.timeoutMs - (Date.now() - startedAt)),
+            signal: attemptSignal,
+            timeoutMs: Math.min(remainingMs, config.attemptTimeoutMs ?? remainingMs),
             // Gateways such as opencode-go also reject requests without a session id.
             sessionId: `${SESSION_KEY_PREFIX}${context.sessionManager.getSessionId()}`,
             ...(model.reasoning && config.reasoning !== 'off' ? { reasoning: config.reasoning } : {}),
           },
         )
-        const message = await raceWithSignal(stream.result(), signal)
+        const message = await raceWithSignal(stream.result(), attemptSignal)
         diagnostics.inputTokens += message.usage.input
         diagnostics.cacheReadTokens += message.usage.cacheRead
         diagnostics.outputTokens += message.usage.output
@@ -177,17 +191,18 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
 
         return { assessment: parseReviewAssessment(text), diagnostics }
       } catch {
-        const delay = RETRY_DELAYS_MS[attempt]
-        if (signal.aborted) {
+        if (reviewSignal.aborted) {
           return aborted()
         }
-        if (delay === undefined) {
-          return failure(category)
+        if (attempt >= maxRetries) {
+          return failure(attemptController.signal.aborted ? 'attempt-timeout' : category)
         }
-        await sleep(delay, signal)
-        if (signal.aborted) {
-          return aborted()
-        }
+      } finally {
+        clearTimeout(attemptTimeout)
+      }
+      await sleep(retryDelay(attempt), reviewSignal)
+      if (reviewSignal.aborted) {
+        return aborted()
       }
     }
   } finally {

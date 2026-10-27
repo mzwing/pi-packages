@@ -2,7 +2,7 @@ import type { ConfigScope, LoadConfigResult } from './config-store.js'
 import type { AutoReviewConfig, AutoReviewConfigFile } from './config.js'
 import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
 import { configPath, loadConfig, readActiveScope, readScope, resetScope, saveScope } from './config-store.js'
-import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, MAX_TIMEOUT_MS, REASONING_LEVELS } from './config.js'
+import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS, validateConfigFile } from './config.js'
 
 const COMMAND_NAME = 'permission-auto-review'
 const USAGE = `Usage: /${COMMAND_NAME} [show|path|reset [global|project]|help]`
@@ -66,6 +66,38 @@ function editString(
   }
 }
 
+function editInteger(
+  field: 'timeoutMs' | 'maxRetries' | 'attemptTimeoutMs',
+  title: string,
+  action: string,
+  prompt: string,
+): Editor {
+  return async (ctx, draft, effective) => {
+    const selected = await ctx.ui.select(title, [INHERIT, action])
+    if (selected === INHERIT) {
+      return withField(draft, field, undefined)
+    }
+    const source = selected === undefined ? undefined : await ctx.ui.input(prompt, String(effective[field] ?? ''))
+    if (source === undefined) {
+      return draft
+    }
+    // `Number('')` is 0, which would silently save a retry count nobody typed.
+    const value = source.trim() === '' ? Number.NaN : Number(source)
+    const validated = validateConfigFile({ [field]: value })
+    if (!validated.ok) {
+      ctx.ui.notify(validated.issue, 'warning')
+
+      return draft
+    }
+
+    return withField(draft, field, value)
+  }
+}
+
+function formatMilliseconds(value: unknown): string {
+  return typeof value === 'number' ? `${value} ms` : String(value ?? 'not set')
+}
+
 const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (value: unknown) => string }> = {
   provider: {
     label: 'Provider',
@@ -98,26 +130,22 @@ const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (valu
   },
   timeoutMs: {
     label: 'Timeout',
-    format: value => (typeof value === 'number' ? `${value} ms` : String(value ?? 'not set')),
-    edit: async (ctx, draft, effective) => {
-      const action = await ctx.ui.select('Configure Timeout', [INHERIT, 'Enter timeout...'])
-      if (action === INHERIT) {
-        return withField(draft, 'timeoutMs', undefined)
-      }
-      const source =
-        action === undefined ? undefined : await ctx.ui.input('Timeout in milliseconds', String(effective.timeoutMs))
-      if (source === undefined) {
-        return draft
-      }
-      const timeoutMs = Number(source.trim())
-      if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
-        ctx.ui.notify(`timeoutMs must be an integer between 1 and ${MAX_TIMEOUT_MS}.`, 'warning')
-
-        return draft
-      }
-
-      return withField(draft, 'timeoutMs', timeoutMs)
-    },
+    format: formatMilliseconds,
+    edit: editInteger('timeoutMs', 'Configure Timeout', 'Enter timeout...', 'Timeout in milliseconds'),
+  },
+  maxRetries: {
+    label: 'Retries',
+    edit: editInteger('maxRetries', 'Configure Retries', 'Enter retry count...', 'Retries after the first call'),
+  },
+  attemptTimeoutMs: {
+    label: 'Attempt timeout',
+    format: formatMilliseconds,
+    edit: editInteger(
+      'attemptTimeoutMs',
+      'Configure Attempt Timeout',
+      'Enter attempt timeout...',
+      'Attempt timeout in milliseconds',
+    ),
   },
   includeBaselinePolicy: {
     label: 'Baseline policy',

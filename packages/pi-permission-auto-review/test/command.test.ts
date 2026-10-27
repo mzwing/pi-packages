@@ -1,7 +1,7 @@
 import type { LoadConfigResult } from '../src/config-store.js'
 import type { AutoReviewConfig } from '../src/config.js'
 import type { ExtensionAPI, ExtensionCommandContext, RegisteredCommand } from '@earendil-works/pi-coding-agent'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { registerAutoReviewCommand } from '../src/command.js'
 import { configPath, loadConfig } from '../src/config-store.js'
@@ -46,7 +46,12 @@ describe('/permission-auto-review', () => {
       cwd: workspace.cwd,
       mode: 'tui',
       modelRegistry: { getAll: () => [] },
-      ui: { select, input: async () => answers['input'], notify },
+      ui: {
+        select,
+        input: async () => answers['input'],
+        confirm: async () => true,
+        notify,
+      },
       waitForIdle: async () => {},
       isProjectTrusted: () => projectTrusted,
       reload,
@@ -116,5 +121,77 @@ describe('/permission-auto-review', () => {
     const message = String(harness.notify.mock.calls[1]?.[0])
     expect(message).toContain('reasoning=low (default)')
     expect(message).toContain('(ignored until Pi trusts this project)')
+  })
+
+  it('edits the retry count and the attempt timeout', async () => {
+    const harness = setup(['Retries:', 'Attempt timeout:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Retries': 'Enter retry count...',
+      'Configure Attempt Timeout': 'Enter attempt timeout...',
+      input: '20',
+    })
+    await harness.run('')
+
+    expect(harness.menus[0]).toContain('Retries: 2 (source: default; global: inherit)')
+    expect(harness.menus[0]).toContain('Attempt timeout: not set (source: default; global: inherit)')
+    expect(harness.menus[2]).toContain('Retries: 20 (source: global; global: override)')
+    expect(harness.menus[2]).toContain('Attempt timeout: 20 ms (source: global; global: override)')
+    expect(stored('global')).toMatchObject({ maxRetries: 20, attemptTimeoutMs: 20 })
+    expect(harness.activeConfig()).toMatchObject({ maxRetries: 20, attemptTimeoutMs: 20 })
+  })
+
+  it.each([
+    ['21', 'Retries:', 'Configure Retries', 'Enter retry count...'],
+    ['1.5', 'Retries:', 'Configure Retries', 'Enter retry count...'],
+    ['', 'Retries:', 'Configure Retries', 'Enter retry count...'],
+    ['0', 'Attempt timeout:', 'Configure Attempt Timeout', 'Enter attempt timeout...'],
+  ])('warns and keeps the draft on input %j for %s', async (input, pick, title, action) => {
+    const harness = setup([pick], { 'Select configuration scope': 'Global configuration', [title]: action, input })
+    await harness.run('')
+
+    expect(harness.notify).toHaveBeenCalledWith(expect.any(String), 'warning')
+    expect(harness.activeConfig()).toMatchObject({ maxRetries: 2 })
+    expect(harness.activeConfig()).not.toHaveProperty('attemptTimeoutMs')
+  })
+
+  it('lets a project field fall back to the global one, field by field', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { maxRetries: 7, attemptTimeoutMs: 60_000 })
+    writeFile(configPath(workspace.cwd, 'project'), { maxRetries: 0 })
+    const harness = setup(['Retries:'], {
+      'Select configuration scope': 'Project configuration',
+      'Configure Retries': 'Use inherited value',
+    })
+    await harness.run('')
+
+    expect(harness.menus[0]).toContain('Retries: 0 (source: project; project: override)')
+    expect(harness.menus[0]).toContain('Attempt timeout: 60000 ms (source: global; project: inherit)')
+    expect(harness.activeConfig()).toMatchObject({ maxRetries: 7, attemptTimeoutMs: 60_000 })
+  })
+
+  it('shows the retry fields with their origins, ignoring an untrusted project', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { maxRetries: 7 })
+    writeFile(configPath(workspace.cwd, 'project'), { attemptTimeoutMs: 60_000 })
+    const trusted = setup([])
+    await trusted.run('show')
+    const untrusted = setup([], {}, false)
+    await untrusted.run('show')
+
+    expect(String(trusted.notify.mock.calls[0]?.[0])).toContain(
+      'maxRetries=7 (global)\nattemptTimeoutMs=60000 ms (project)',
+    )
+    expect(String(untrusted.notify.mock.calls[0]?.[0])).toContain(
+      'maxRetries=7 (global)\nattemptTimeoutMs=not set (default)',
+    )
+  })
+
+  it('drops the project retry fields with the project file on reset', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { maxRetries: 7 })
+    writeFile(configPath(workspace.cwd, 'project'), { maxRetries: 0, attemptTimeoutMs: 1_000 })
+    const harness = setup([])
+    await harness.run('reset project')
+
+    expect(existsSync(configPath(workspace.cwd, 'project'))).toBe(false)
+    expect(harness.activeConfig()).toMatchObject({ maxRetries: 7 })
+    expect(harness.activeConfig()).not.toHaveProperty('attemptTimeoutMs')
   })
 })

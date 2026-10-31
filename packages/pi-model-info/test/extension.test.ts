@@ -374,6 +374,18 @@ describe('model info extension', () => {
       })
     })
 
+    // Each registration rebuilds Pi's whole model snapshot, and an unexpired cache comes back from the refresh unchanged
+    it('registers a session once from a cached catalog that the refresh leaves as it was', async () => {
+      const harness = setup()
+      harness.start()
+      await settle()
+
+      harness.start()
+      await settle()
+
+      expect(harness.registrations).toHaveLength(2)
+    })
+
     it('re-registers only once another extension has changed the list', async () => {
       const registry = createRegistry({ models: [makeSnapshot({ id: 'gpt-5.5' })] })
       const harness = setup({ registry })

@@ -47,8 +47,11 @@ Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.p
 | `timeoutMs`             | `90000`             | Total budget across retries                                   |
 | `maxRetries`            | `2`                 | Retries when a call fails or its reply is malformed           |
 | `attemptTimeoutMs`      | —                   | Time limit for one call; without it, only `timeoutMs` applies |
+| `followUpReviews`       | `auto`              | Continue the reviewer's conversation across asks; see below   |
 | `includeBaselinePolicy` | `true`              | Include the bundled Guardian policy                           |
 | `additionalPolicy`      | —                   | Operator policy, required when the baseline is disabled       |
+
+Like Codex, a later ask in a session continues the reviewer's conversation and sends only what the session added since the last review. The conversation starts over in full when it would overflow the reviewer's context window, when the session moves to another branch, or after a review fails. `auto` also starts over after a follow-up the provider served without a cache hit, so a provider that does not cache never resends a growing conversation; `always` keeps the conversation then, and `off` sends every review in full.
 
 ## Programmatic use
 

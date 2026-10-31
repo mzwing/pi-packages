@@ -9,6 +9,7 @@ export const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-permission-auto-review/schemas/config.schema.json'
 
 export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+export const FOLLOW_UP_REVIEW_MODES = ['auto', 'always', 'off'] as const
 
 const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
 const timeoutSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1), v.maxValue(MAX_TIMEOUT_MS))
@@ -22,6 +23,7 @@ const fileSchema = v.strictObject({
   timeoutMs: v.optional(timeoutSchema),
   maxRetries: v.optional(maxRetriesSchema),
   attemptTimeoutMs: v.optional(timeoutSchema),
+  followUpReviews: v.optional(v.picklist(FOLLOW_UP_REVIEW_MODES)),
   includeBaselinePolicy: v.optional(v.boolean()),
   additionalPolicy: v.optional(nonBlankSchema),
 })
@@ -34,6 +36,7 @@ const configSchema = v.pipe(
     reasoning: v.optional(v.picklist(REASONING_LEVELS), 'low'),
     timeoutMs: v.optional(timeoutSchema, 90_000),
     maxRetries: v.optional(maxRetriesSchema, 2),
+    followUpReviews: v.optional(v.picklist(FOLLOW_UP_REVIEW_MODES), 'auto'),
     includeBaselinePolicy: v.optional(v.boolean(), true),
   }),
   v.forward(
@@ -54,6 +57,7 @@ export interface AutoReviewConfig {
   timeoutMs: number
   maxRetries: number
   attemptTimeoutMs?: number | undefined
+  followUpReviews: (typeof FOLLOW_UP_REVIEW_MODES)[number]
   includeBaselinePolicy: boolean
   additionalPolicy?: string | undefined
 }

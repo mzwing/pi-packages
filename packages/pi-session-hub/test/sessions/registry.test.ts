@@ -1,8 +1,14 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
-import { findLiveSession, listLiveSessions, registerSession, unregisterSession } from '../../src/sessions/registry.js'
+import {
+  findLiveSession,
+  findSession,
+  listLiveSessions,
+  registerSession,
+  unregisterSession,
+} from '../../src/sessions/registry.js'
 import { useAgentDir } from '../helpers.js'
 
 // Above every platform's pid range, so it can never be a live process
@@ -29,5 +35,23 @@ describe('session registry', () => {
 
     expect(listLiveSessions().map(session => session.id)).toEqual(['alpha'])
     expect(existsSync(join(agent.root, 'pi-session-hub', 'registry', 'ghost.json'))).toBe(false)
+  })
+
+  // A session id may hold `_` itself, so `x_beta` ends in the same `_beta.jsonl`
+  it('finds a stopped session of any project by its id, with the cwd it ran in', async () => {
+    expect(await findSession('beta')).toBeUndefined()
+
+    const storeSession = (id: string, cwd: string): string => {
+      const file = join(agent.root, 'sessions', `-${cwd.replaceAll('/', '-')}-`, `2026-10-31T00-00-00-000Z_${id}.jsonl`)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, `${JSON.stringify({ type: 'session', version: 3, id, timestamp: '', cwd })}\n`)
+
+      return file
+    }
+    storeSession('x_beta', '/elsewhere')
+    expect(await findSession('beta')).toBeUndefined()
+
+    const file = storeSession('beta', '/other')
+    expect(await findSession('beta')).toEqual({ id: 'beta', file, cwd: '/other', running: false })
   })
 })

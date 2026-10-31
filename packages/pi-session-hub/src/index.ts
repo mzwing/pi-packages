@@ -154,10 +154,7 @@ export default function sessionHub(pi: ExtensionAPI): void {
 
         return
       }
-      ctx.ui.notify(
-        (await describeTranscript(id, ctx.cwd, DEFAULT_TRANSCRIPT)) ?? `No session has the id ${id}.`,
-        'info',
-      )
+      ctx.ui.notify((await describeTranscript(id, DEFAULT_TRANSCRIPT)) ?? `No session has the id ${id}.`, 'info')
     },
   })
 }

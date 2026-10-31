@@ -1,5 +1,5 @@
 import type { AutoReviewConfig } from '../../src/config/config.js'
-import type { AssistantMessage, SimpleStreamOptions } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Context, SimpleStreamOptions, Usage } from '@earendil-works/pi-ai'
 import type { ModelRegistry, SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { AuthorizerLog, PermissionQuery, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,12 +23,16 @@ const USER_ENTRY = {
   message: { role: 'user', content: 'Please run the requested operation.', timestamp: 0 },
 } as SessionEntry
 
-function reply(text: string, stopReason: AssistantMessage['stopReason'] = 'stop'): AssistantMessage {
+function reply(
+  text: string,
+  stopReason: AssistantMessage['stopReason'] = 'stop',
+  usage: Partial<Usage> = {},
+): AssistantMessage {
   return {
     role: 'assistant',
     content: [{ type: 'text', text }],
     stopReason,
-    usage: { input: 100, output: 10, cacheRead: 40 },
+    usage: { input: 100, output: 10, cacheRead: 40, cacheWrite: 0, totalTokens: 150, ...usage },
   } as AssistantMessage
 }
 
@@ -57,8 +61,13 @@ interface HarnessOptions {
 function createHarness(options: HarnessOptions = {}) {
   const replies = [...(options.replies ?? [reply(ALLOW)])]
   const callTimes: number[] = []
+  const branch = [...(options.entries ?? [USER_ENTRY])]
   const streamSimple = vi.fn(
-    (_model: unknown, _context: { messages: { content: string }[] }, _options: SimpleStreamOptions) => ({
+    (
+      _model: unknown,
+      _context: Required<Pick<Context, 'systemPrompt' | 'messages'>>,
+      _options: SimpleStreamOptions,
+    ) => ({
       result: async () => {
         callTimes.push(Date.now())
         const next = replies.shift() ?? new Error('no scripted reply')
@@ -87,7 +96,7 @@ function createHarness(options: HarnessOptions = {}) {
     config: { ...DEFAULT_CONFIG, provider: 'custom-review', model: 'review-model', ...options.config },
     context: {
       modelRegistry: registry,
-      sessionManager: { getBranch: () => options.entries ?? [USER_ENTRY], getSessionId: () => 'session-1' },
+      sessionManager: { getBranch: () => [...branch], getSessionId: () => 'session-1' },
       signal: options.turnSignal,
     } as never,
     circuitBreaker,
@@ -105,6 +114,8 @@ function createHarness(options: HarnessOptions = {}) {
   }
 
   return {
+    /** The session's active branch, which a test may grow or replace between reviews */
+    branch,
     circuitBreaker,
     streamSimple,
     callTimes,
@@ -145,9 +156,7 @@ describe('permission reviewer', () => {
       toolInputIncluded: false,
       directUserEntriesRetained: 1,
       latestTrustedEntryRetained: true,
-      inputTokens: 100,
-      cacheReadTokens: 40,
-      outputTokens: 10,
+      usage: { input: 100, cacheRead: 40, output: 10 },
     })
   })
 
@@ -157,7 +166,7 @@ describe('permission reviewer', () => {
     expect(verdict.kind === 'deny' ? verdict.reason : undefined).toMatch(
       /^Publishing was not authorized\. \(risk: high, user authorization: unknown\)\. The agent must not attempt to achieve the same outcome via workaround/,
     )
-    expect(entries[0]?.[1]).toMatchObject({ outcome: 'deny', riskLevel: 'high' })
+    expect(entries[0]?.[1]).toMatchObject({ outcome: 'deny', riskLevel: 'high', userApproval: 'unknown' })
     expect(entries[0]?.[1]).not.toHaveProperty('rationale')
   })
 
@@ -199,7 +208,7 @@ describe('permission reviewer', () => {
     }).authorize()
     expect(malformed.verdict).toEqual({ kind: 'defer' })
     // Every reply is paid for, including the ones that were retried
-    expect(malformed.entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response', inputTokens: 300 })
+    expect(malformed.entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response', usage: { input: 300 } })
 
     // Request-time authentication fails inside the registry stream, so an unusable login arrives here too
     const failing = createHarness({ replies: [new Error('no login'), new Error('no login'), new Error('no login')] })
@@ -341,6 +350,72 @@ describe('permission reviewer', () => {
       expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'cancelled', durationMs: 100 })
       expect(harness.streamSimple).toHaveBeenCalledOnce()
       expect(vi.getTimerCount()).toBe(0)
+    })
+  })
+
+  describe('follow-up reviews', () => {
+    const uncached = (): AssistantMessage => reply(ALLOW, 'stop', { cacheRead: 0 })
+    const messageCounts = (harness: ReturnType<typeof createHarness>): number[] =>
+      harness.streamSimple.mock.calls.map(([, context]) => context.messages.length)
+
+    async function authorizeEach(harness: ReturnType<typeof createHarness>, count: number): Promise<void> {
+      for (let index = 1; index <= count; index += 1) {
+        await harness.authorize(`request-${index}`)
+      }
+    }
+
+    it('continues the conversation with only what the session added since the last review', async () => {
+      const first = reply(ALLOW)
+      const harness = createHarness({ replies: [first, reply(ALLOW)] })
+      await harness.authorize('request-1')
+      harness.branch.push(toolCallEntry({ path: 'notes.md', content: 'the second change' }))
+      const { entries } = await harness.authorize('request-2')
+      const [, initial] = harness.streamSimple.mock.calls[0] ?? []
+      const [, followUp] = harness.streamSimple.mock.calls[1] ?? []
+
+      expect(followUp?.systemPrompt).toBe(initial?.systemPrompt)
+      expect(followUp?.messages.slice(0, 2)).toEqual([initial?.messages[0], first])
+      expect(followUp?.messages[2]?.content).toContain('>>> TRANSCRIPT DELTA JSONL START')
+      expect(followUp?.messages[2]?.content).toContain('the second change')
+      expect(followUp?.messages[2]?.content).not.toContain('Please run the requested operation.')
+      expect(entries[0]?.[1]).toMatchObject({ priorReviews: 1 })
+    })
+
+    it('starts over in full once the reviewed entries leave the branch, or the conversation would not fit', async () => {
+      const moved = createHarness({ replies: [reply(ALLOW), reply(ALLOW)] })
+      await moved.authorize('request-1')
+      moved.branch.splice(0, 1, { ...USER_ENTRY, id: 'user-2' })
+      await moved.authorize('request-2')
+
+      const crowded = createHarness({ replies: [reply(ALLOW, 'stop', { totalTokens: 190_000 }), reply(ALLOW)] })
+      await authorizeEach(crowded, 2)
+
+      expect(messageCounts(moved)).toEqual([1, 1])
+      expect(messageCounts(crowded)).toEqual([1, 1])
+    })
+
+    it('starts over after a follow-up the provider served without a cache hit, unless told to always follow up', async () => {
+      const modes = [
+        ['auto', [1, 3, 1]],
+        ['always', [1, 3, 5]],
+        ['off', [1, 1, 1]],
+      ] as const
+      for (const [followUpReviews, counts] of modes) {
+        const harness = createHarness({ config: { followUpReviews }, replies: [uncached(), uncached(), uncached()] })
+        await authorizeEach(harness, 3)
+
+        expect(messageCounts(harness)).toEqual(counts)
+      }
+    })
+
+    it('starts over after a review that failed', async () => {
+      const harness = createHarness({
+        config: { maxRetries: 0 },
+        replies: [reply(ALLOW), new Error('context length exceeded'), reply(ALLOW)],
+      })
+      await authorizeEach(harness, 3)
+
+      expect(messageCounts(harness)).toEqual([1, 3, 1])
     })
   })
 })

@@ -1,7 +1,9 @@
-import { rmSync } from 'node:fs'
+import { createReadStream, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import process from 'node:process'
-import { SessionManager } from '@earendil-works/pi-coding-agent'
-import { hubPath, listJsonFiles, readJson, writeJsonAtomic } from '../files.js'
+import { createInterface } from 'node:readline'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
+import { hubPath, listEntries, listJsonFiles, readJson, writeJsonAtomic } from '../files.js'
 
 /** A running session, written by that session itself at start and removed at shutdown */
 export interface SessionRecord {
@@ -61,18 +63,52 @@ export function listLiveSessions(): SessionRecord[] {
   return listJsonFiles(hubPath('registry')).flatMap(name => findLiveSession(name.slice(0, -'.json'.length)) ?? [])
 }
 
-/** Looks in the running sessions, then this project's sessions, then every project's */
-export async function findSession(id: string, cwd: string): Promise<StoredSession | undefined> {
+/** Pi names every session file `<timestamp>_<id>.jsonl`, with no `_` in the timestamp, so the name finds one unread */
+function findSessionFile(id: string): string | undefined {
+  const root = join(getAgentDir(), 'sessions')
+  for (const project of listEntries(root)) {
+    if (!project.isDirectory() && !project.isSymbolicLink()) {
+      continue
+    }
+    const file = listEntries(join(root, project.name)).find(
+      entry => entry.name.slice(entry.name.indexOf('_') + 1) === `${id}.jsonl`,
+    )
+    if (file !== undefined) {
+      return join(root, project.name, file.name)
+    }
+  }
+
+  return undefined
+}
+
+/** From the session header, the file's first line; `undefined` when the file does not open with one */
+async function readSessionCwd(file: string): Promise<string | undefined> {
+  const input = createReadStream(file, 'utf8')
+  try {
+    for await (const line of createInterface({ input })) {
+      const header = JSON.parse(line) as { type?: unknown; cwd?: unknown }
+
+      return header.type === 'session' && typeof header.cwd === 'string' ? header.cwd : undefined
+    }
+
+    return undefined
+  } finally {
+    // Leaving the loop early closes readline but not the file under it
+    input.destroy()
+  }
+}
+
+/** Looks in the running sessions, then in the session files of every project */
+export async function findSession(id: string): Promise<StoredSession | undefined> {
   const live = findLiveSession(id)
   if (live?.file !== undefined) {
     return { id, file: live.file, cwd: live.cwd, running: true }
   }
-  const running = live !== undefined
-  const local = SessionManager.findById(cwd, id)
-  if (local !== undefined) {
-    return { id, file: local, cwd, running }
+  const file = findSessionFile(id)
+  if (file === undefined) {
+    return undefined
   }
-  const found = (await SessionManager.listAll()).find(info => info.id === id)
+  const cwd = await readSessionCwd(file)
 
-  return found === undefined ? undefined : { id, file: found.path, cwd: found.cwd, running }
+  return cwd === undefined ? undefined : { id, file, cwd, running: live !== undefined }
 }

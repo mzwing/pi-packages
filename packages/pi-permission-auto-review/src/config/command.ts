@@ -1,7 +1,14 @@
 import type { AutoReviewConfig, AutoReviewConfigFile } from './config.js'
 import type { ConfigScope, LoadConfigResult } from './store.js'
 import type { ExtensionAPI, ExtensionCommandContext } from '@earendil-works/pi-coding-agent'
-import { DEFAULT_CONFIG, DEFAULT_MODEL, DEFAULT_PROVIDER, REASONING_LEVELS, validateConfigFile } from './config.js'
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  FOLLOW_UP_REVIEW_MODES,
+  REASONING_LEVELS,
+  validateConfigFile,
+} from './config.js'
 import { configPath, loadConfig, readActiveScope, readScope, resetScope, saveScope } from './store.js'
 
 const COMMAND_NAME = 'permission-auto-review'
@@ -66,6 +73,22 @@ function editString(
   }
 }
 
+function editChoice<K extends 'reasoning' | 'followUpReviews'>(
+  field: K,
+  title: string,
+  choices: readonly AutoReviewConfig[K][],
+): Editor {
+  return async (ctx, draft) => {
+    const selected = await ctx.ui.select(title, [INHERIT, ...choices])
+    if (selected === INHERIT) {
+      return withField(draft, field, undefined)
+    }
+    const choice = choices.find(candidate => candidate === selected)
+
+    return choice === undefined ? draft : withField(draft, field, choice)
+  }
+}
+
 function editInteger(field: 'timeoutMs' | 'maxRetries' | 'attemptTimeoutMs', title: string, prompt: string): Editor {
   return async (ctx, draft, effective) => {
     const selected = await ctx.ui.select(title, [INHERIT, CUSTOM])
@@ -113,15 +136,7 @@ const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (valu
   },
   reasoning: {
     label: 'Reasoning',
-    edit: async (ctx, draft) => {
-      const selected = await ctx.ui.select('Configure Reasoning', [INHERIT, ...REASONING_LEVELS])
-      if (selected === INHERIT) {
-        return withField(draft, 'reasoning', undefined)
-      }
-      const reasoning = REASONING_LEVELS.find(level => level === selected)
-
-      return reasoning === undefined ? draft : withField(draft, 'reasoning', reasoning)
-    },
+    edit: editChoice('reasoning', 'Configure Reasoning', REASONING_LEVELS),
   },
   timeoutMs: {
     label: 'Timeout',
@@ -136,6 +151,10 @@ const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (valu
     label: 'Attempt timeout',
     format: formatMilliseconds,
     edit: editInteger('attemptTimeoutMs', 'Configure Attempt Timeout', 'Attempt timeout in milliseconds'),
+  },
+  followUpReviews: {
+    label: 'Follow-up reviews',
+    edit: editChoice('followUpReviews', 'Configure Follow-up Reviews', FOLLOW_UP_REVIEW_MODES),
   },
   includeBaselinePolicy: {
     label: 'Baseline policy',

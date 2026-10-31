@@ -46,8 +46,11 @@ function userInteractionEntries(
   ]
 }
 
-function records(entries: SessionEntry[]): { index: number; source: string; label: string; content: string }[] {
-  return renderTranscript(entries).entries.map(
+function records(
+  entries: SessionEntry[],
+  from?: number,
+): { index: number; source: string; label: string; content: string }[] {
+  return renderTranscript(entries, from).entries.map(
     entry => JSON.parse(entry) as { index: number; source: string; label: string; content: string },
   )
 }
@@ -95,6 +98,23 @@ describe('transcript rendering', () => {
     ]
 
     expect(records(entries).map(record => record.source)).toEqual(Array.from({ length: 12 }).fill('tool'))
+  })
+
+  // A follow-up review has seen the question already, and still needs its answer as user evidence
+  it('renders only the entries from `from` on, numbered as in the whole branch', () => {
+    const entries = [
+      messageEntry('request', 'user', 'Ask me before you pick a color.'),
+      ...userInteractionEntries('ask', 'ask_user_question', [{ question: 'Choose a color?', answer: 'Blue' }]),
+    ]
+
+    expect(records(entries, 2)).toEqual([
+      {
+        index: 2,
+        source: 'user_interaction',
+        label: 'user_interaction:ask_user_question',
+        content: '[{"question":"Choose a color?","answer":"Blue"}]',
+      },
+    ])
   })
 
   it('requires a matching preceding recognized tool call', () => {

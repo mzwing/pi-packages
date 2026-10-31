@@ -304,10 +304,13 @@ function isTrusted(entry: TranscriptEntry): boolean {
 
 /**
  * Keeps the first and latest trusted records unconditionally, then other trusted records newest first, then the
- * newest untrusted ones; the untrusted cap never evicts an authorization that was already selected
+ * newest untrusted ones; the untrusted cap never evicts an authorization that was already selected. A follow-up
+ * review sees only the entries from `from` on, which still count an answer to a question asked before them
  */
-export function renderTranscript(sessionEntries: SessionEntry[]): RenderedTranscript {
-  const all = collectEntries(sessionEntries).map(pretruncate)
+export function renderTranscript(sessionEntries: SessionEntry[], from = 0): RenderedTranscript {
+  const all = collectEntries(sessionEntries)
+    .filter(entry => entry.index >= from)
+    .map(pretruncate)
   const trusted = all.filter(isTrusted)
   const selected = new Set<TranscriptEntry>()
   const used = { message: 0, tool: 0 }

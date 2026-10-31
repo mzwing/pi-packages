@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs'
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -33,15 +34,20 @@ export function readJson<T>(path: string): T | undefined {
   }
 }
 
-export function listJsonFiles(directory: string): string[] {
+export function listEntries(directory: string): Dirent[] {
   try {
-    return readdirSync(directory)
-      .filter(name => name.endsWith('.json'))
-      .sort()
+    return readdirSync(directory, { withFileTypes: true })
   } catch (error) {
     if (isMissing(error)) {
       return []
     }
     throw error
   }
+}
+
+export function listJsonFiles(directory: string): string[] {
+  return listEntries(directory)
+    .map(entry => entry.name)
+    .filter(name => name.endsWith('.json'))
+    .sort()
 }

@@ -120,7 +120,7 @@ export class ProviderApplier {
   private readonly lastRegistered = new Map<string, ProviderModelConfig[]>()
   /** Outlives `capture`, so a session switch reuses one wrapper per provider instead of nesting them */
   private readonly wrappers = new Map<string, Provider & Wrapped>()
-  /** The catalog each wrapper was last registered with; registering rebuilds Pi's whole model snapshot */
+  /** The catalog each provider was last registered with; registering rebuilds Pi's whole model snapshot */
   private readonly registeredCatalog = new Map<string, string>()
   private config: ResolvedConfig | undefined
   private authored: UserAuthoredMap = new Map()
@@ -143,7 +143,7 @@ export class ProviderApplier {
     this.authored = config.providers.size === 0 ? new Map() : readUserAuthoredFields()
     this.tracked.clear()
     this.reports.clear()
-    // The config may have changed, so every wrapper owes Pi one fresh pass
+    // The config may have changed, so every provider owes Pi one fresh pass
     this.registeredCatalog.clear()
 
     for (const provider of config.providers.values()) {
@@ -156,11 +156,17 @@ export class ProviderApplier {
       return
     }
     this.catalog = catalog
+    const fingerprint = catalog.sources
+      .map(source => `${source.source}@${source.fetchedAt ?? 0}#${source.entryCount}`)
+      .join('|')
     for (const [providerId, tracked] of this.tracked) {
+      if (this.registeredCatalog.get(providerId) === fingerprint) {
+        continue
+      }
       if (tracked.strategy === 'native') {
-        this.applyNative(providerId, catalog)
+        this.applyNative(providerId, fingerprint)
       } else {
-        this.applyRegistration(providerId, tracked)
+        this.applyRegistration(providerId, tracked, fingerprint)
       }
     }
   }
@@ -180,6 +186,7 @@ export class ProviderApplier {
       }
       tracked.snapshot = liveModels
       tracked.others = passthroughModels(live)
+      this.registeredCatalog.delete(providerId)
       drifted = true
     }
 
@@ -348,13 +355,7 @@ export class ProviderApplier {
     return wrapper
   }
 
-  private applyNative(providerId: string, catalog: CatalogSnapshot): void {
-    const fingerprint = catalog.sources
-      .map(source => `${source.source}@${source.fetchedAt ?? 0}#${source.entryCount}`)
-      .join('|')
-    if (this.registeredCatalog.get(providerId) === fingerprint) {
-      return
-    }
+  private applyNative(providerId: string, fingerprint: string): void {
     try {
       // A provider object becomes Pi's base for the id, so its `getModels()` is the last word on the list
       this.pi.registerProvider(this.wrappers.get(providerId)!)
@@ -364,7 +365,7 @@ export class ProviderApplier {
     }
   }
 
-  private applyRegistration(providerId: string, tracked: Tracked): void {
+  private applyRegistration(providerId: string, tracked: Tracked, fingerprint: string): void {
     // Every model, always: a registered list replaces the whole one, so anything left out disappears from Pi
     const completed = tracked.snapshot.map(snapshot => this.complete(tracked.provider, snapshot))
     const reports = completed.map(entry => entry.report)
@@ -376,6 +377,7 @@ export class ProviderApplier {
         providerId,
         tracked.refresh === undefined ? { models } : { models, refreshModels: tracked.refresh },
       )
+      this.registeredCatalog.set(providerId, fingerprint)
       this.lastRegistered.set(providerId, models)
       this.reports.set(providerId, {
         provider: providerId,

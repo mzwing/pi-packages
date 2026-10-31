@@ -39,6 +39,11 @@
       "minimum": 1,
       "maximum": 300000
     },
+    "followUpReviews": {
+      "enum": ["auto", "always", "off"],
+      "type": "string",
+      "default": "auto"
+    },
     "includeBaselinePolicy": {
       "type": "boolean",
       "default": true

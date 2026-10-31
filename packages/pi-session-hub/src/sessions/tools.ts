@@ -45,12 +45,8 @@ export async function describeSessions(ctx: ExtensionContext): Promise<string> {
 }
 
 /** `undefined` when no session has the id */
-export async function describeTranscript(
-  id: string,
-  cwd: string,
-  options: TranscriptOptions,
-): Promise<string | undefined> {
-  const session = await findSession(id, cwd)
+export async function describeTranscript(id: string, options: TranscriptOptions): Promise<string | undefined> {
+  const session = await findSession(id)
   if (session === undefined) {
     return undefined
   }
@@ -89,8 +85,8 @@ export function registerSessionTools(pi: ExtensionAPI): void {
         ),
         tools: Type.Optional(Type.Boolean({ description: 'Include tool results (default false)' })),
       }),
-      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        const transcript = await describeTranscript(params.session, ctx.cwd, {
+      async execute(_toolCallId, params) {
+        const transcript = await describeTranscript(params.session, {
           last: params.last ?? DEFAULT_TRANSCRIPT.last,
           tools: params.tools ?? DEFAULT_TRANSCRIPT.tools,
         })
@@ -167,7 +163,7 @@ export function registerSessionTools(pi: ExtensionAPI): void {
         let sessionId: string = randomUUID()
         let cwd = resolve(ctx.cwd, params.cwd ?? '.')
         if (params.resume !== undefined) {
-          const session = await findSession(params.resume, ctx.cwd)
+          const session = await findSession(params.resume)
           if (session === undefined) {
             throw new Error(`No session has the id ${params.resume}.`)
           }

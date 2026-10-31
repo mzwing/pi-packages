@@ -8,7 +8,6 @@
       "minLength": 1
     },
     "providers": {
-      "default": {},
       "type": "object",
       "propertyNames": {
         "type": "string",
@@ -26,16 +25,16 @@
             "minimum": 0
           },
           "costPolicy": {
-            "type": "string",
-            "enum": ["catalog", "zero", "keep"]
+            "enum": ["catalog", "zero", "keep"],
+            "type": "string"
           },
           "contextWindowPolicy": {
-            "type": "string",
-            "enum": ["catalog", "min", "keep"]
+            "enum": ["catalog", "min", "keep"],
+            "type": "string"
           },
           "capabilityPolicy": {
-            "type": "string",
-            "enum": ["catalog", "widen", "keep"]
+            "enum": ["catalog", "widen", "keep"],
+            "type": "string"
           },
           "useCatalogName": {
             "type": "boolean"
@@ -84,12 +83,12 @@
                       "type": "boolean"
                     },
                     "input": {
-                      "minItems": 1,
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "enum": ["text", "image"]
-                      }
+                        "enum": ["text", "image"],
+                        "type": "string"
+                      },
+                      "minItems": 1
                     },
                     "cost": {
                       "type": "object",
@@ -133,7 +132,7 @@
                               },
                               "inputTokensAbove": {
                                 "type": "integer",
-                                "exclusiveMinimum": 0,
+                                "minimum": 1,
                                 "maximum": 9007199254740991
                               }
                             },
@@ -142,57 +141,111 @@
                           }
                         }
                       },
+                      "required": [],
                       "additionalProperties": false
                     },
                     "contextWindow": {
                       "type": "integer",
-                      "exclusiveMinimum": 0,
+                      "minimum": 1,
                       "maximum": 9007199254740991
                     },
                     "maxTokens": {
                       "type": "integer",
-                      "exclusiveMinimum": 0,
+                      "minimum": 1,
                       "maximum": 9007199254740991
                     },
                     "thinkingLevelMap": {
                       "type": "object",
                       "properties": {
                         "off": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "minimal": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "low": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "medium": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "high": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "xhigh": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "max": {
-                          "type": ["string", "null"]
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
+                      "required": [],
                       "additionalProperties": false
                     },
                     "compat": {}
                   },
+                  "required": [],
                   "additionalProperties": false
                 },
                 "skip": {
                   "type": "boolean"
                 }
               },
+              "required": [],
               "additionalProperties": false
             }
           }
         },
+        "required": [],
         "additionalProperties": false
       }
     },
@@ -245,12 +298,12 @@
                 "type": "boolean"
               },
               "input": {
-                "minItems": 1,
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "enum": ["text", "image"]
-                }
+                  "enum": ["text", "image"],
+                  "type": "string"
+                },
+                "minItems": 1
               },
               "cost": {
                 "type": "object",
@@ -294,7 +347,7 @@
                         },
                         "inputTokensAbove": {
                           "type": "integer",
-                          "exclusiveMinimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         }
                       },
@@ -303,53 +356,106 @@
                     }
                   }
                 },
+                "required": [],
                 "additionalProperties": false
               },
               "contextWindow": {
                 "type": "integer",
-                "exclusiveMinimum": 0,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "maxTokens": {
                 "type": "integer",
-                "exclusiveMinimum": 0,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "thinkingLevelMap": {
                 "type": "object",
                 "properties": {
                   "off": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "minimal": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "low": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "medium": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "high": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "xhigh": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "max": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
+                "required": [],
                 "additionalProperties": false
               },
               "compat": {}
             },
+            "required": [],
             "additionalProperties": false
           },
           "skip": {
             "type": "boolean"
           }
         },
+        "required": [],
         "additionalProperties": false
       }
     },
@@ -363,8 +469,8 @@
             "minLength": 1
           },
           "kind": {
-            "type": "string",
-            "enum": ["prefix", "suffix"]
+            "enum": ["prefix", "suffix"],
+            "type": "string"
           },
           "value": {
             "type": "string",
@@ -384,12 +490,12 @@
                 "type": "boolean"
               },
               "input": {
-                "minItems": 1,
                 "type": "array",
                 "items": {
-                  "type": "string",
-                  "enum": ["text", "image"]
-                }
+                  "enum": ["text", "image"],
+                  "type": "string"
+                },
+                "minItems": 1
               },
               "cost": {
                 "type": "object",
@@ -433,7 +539,7 @@
                         },
                         "inputTokensAbove": {
                           "type": "integer",
-                          "exclusiveMinimum": 0,
+                          "minimum": 1,
                           "maximum": 9007199254740991
                         }
                       },
@@ -442,47 +548,99 @@
                     }
                   }
                 },
+                "required": [],
                 "additionalProperties": false
               },
               "contextWindow": {
                 "type": "integer",
-                "exclusiveMinimum": 0,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "maxTokens": {
                 "type": "integer",
-                "exclusiveMinimum": 0,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               "thinkingLevelMap": {
                 "type": "object",
                 "properties": {
                   "off": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "minimal": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "low": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "medium": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "high": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "xhigh": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "max": {
-                    "type": ["string", "null"]
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
+                "required": [],
                 "additionalProperties": false
               },
               "compat": {}
             },
+            "required": [],
             "additionalProperties": false
           }
         },
@@ -494,12 +652,12 @@
       "type": "boolean"
     },
     "sources": {
-      "minItems": 1,
       "type": "array",
       "items": {
-        "type": "string",
-        "enum": ["pi.dev", "models.dev"]
-      }
+        "enum": ["pi.dev", "models.dev"],
+        "type": "string"
+      },
+      "minItems": 1
     },
     "network": {
       "type": "object",
@@ -509,15 +667,16 @@
         },
         "timeoutMs": {
           "type": "integer",
-          "exclusiveMinimum": 0,
+          "minimum": 1,
           "maximum": 120000
         },
         "maxBytes": {
           "type": "integer",
-          "exclusiveMinimum": 0,
+          "minimum": 1,
           "maximum": 9007199254740991
         }
       },
+      "required": [],
       "additionalProperties": false
     },
     "cache": {
@@ -533,11 +692,13 @@
           "minLength": 1
         }
       },
+      "required": [],
       "additionalProperties": false
     },
     "applyOnIdleOnly": {
       "type": "boolean"
     }
   },
+  "required": [],
   "additionalProperties": false
 }

@@ -55,17 +55,16 @@
     "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
     "prepack": "pnpm run build"
   },
-  "dependencies": {
-    "zod": "4.6.7"
-  },
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
     "@mzwing/pi-session-hub": "workspace:^",
     "@types/node": "catalog:",
+    "@valibot/to-json-schema": "catalog:",
     "tsdown": "catalog:",
     "typebox": "catalog:",
     "typescript": "catalog:",
+    "valibot": "catalog:",
     "vitest": "catalog:"
   },
   "peerDependencies": {

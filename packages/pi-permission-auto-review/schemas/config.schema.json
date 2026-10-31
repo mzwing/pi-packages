@@ -8,46 +8,47 @@
       "minLength": 1
     },
     "provider": {
-      "default": "openai-codex",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "default": "openai-codex"
     },
     "model": {
-      "default": "codex-auto-review",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "default": "codex-auto-review"
     },
     "reasoning": {
-      "default": "low",
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
       "type": "string",
-      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+      "default": "low"
     },
     "timeoutMs": {
-      "default": 90000,
       "type": "integer",
-      "exclusiveMinimum": 0,
-      "maximum": 300000
+      "minimum": 1,
+      "maximum": 300000,
+      "default": 90000
     },
     "maxRetries": {
-      "default": 2,
       "type": "integer",
       "minimum": 0,
-      "maximum": 20
+      "maximum": 20,
+      "default": 2
     },
     "attemptTimeoutMs": {
       "type": "integer",
-      "exclusiveMinimum": 0,
+      "minimum": 1,
       "maximum": 300000
     },
     "includeBaselinePolicy": {
-      "default": true,
-      "type": "boolean"
+      "type": "boolean",
+      "default": true
     },
     "additionalPolicy": {
       "type": "string",
       "minLength": 1
     }
   },
+  "required": [],
   "additionalProperties": false,
   "allOf": [
     {

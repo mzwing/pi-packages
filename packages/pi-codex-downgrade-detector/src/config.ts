@@ -1,31 +1,34 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getAgentDir } from '@earendil-works/pi-coding-agent'
-import { z } from 'zod'
+import { toJsonSchema } from '@valibot/to-json-schema'
+import * as v from 'valibot'
 
 export const EXTENSION_ID = 'pi-codex-downgrade-detector'
 const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-codex-downgrade-detector/schemas/config.schema.json'
 
-const providersSchema = z.array(z.string().trim().min(1))
-const tiersSchema = z.record(z.string().trim().min(1), z.number().int())
+const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
+const providersSchema = v.array(nonBlankSchema)
+const tiersSchema = v.record(nonBlankSchema, v.pipe(v.number(), v.safeInteger()))
 
-const fileSchema = z.strictObject({
-  $schema: z.string().min(1).optional(),
-  providers: providersSchema.optional(),
-  tiers: tiersSchema.optional(),
-  checkEffort: z.boolean().optional(),
-  notify: z.boolean().optional(),
+const fileSchema = v.strictObject({
+  $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
+  providers: v.optional(providersSchema),
+  tiers: v.optional(tiersSchema),
+  checkEffort: v.optional(v.boolean()),
+  notify: v.optional(v.boolean()),
 })
 
-const configSchema = fileSchema.extend({
-  providers: providersSchema.default(['openai-codex']),
-  tiers: tiersSchema.default({}),
-  checkEffort: z.boolean().default(true),
-  notify: z.boolean().default(true),
+const configSchema = v.strictObject({
+  ...fileSchema.entries,
+  providers: v.optional(providersSchema, ['openai-codex']),
+  tiers: v.optional(tiersSchema, {}),
+  checkEffort: v.optional(v.boolean(), true),
+  notify: v.optional(v.boolean(), true),
 })
 
-// `isolatedDeclarations` cannot emit a `z.infer` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
 export interface DetectorConfig {
   $schema?: string | undefined
   providers: string[]
@@ -34,7 +37,7 @@ export interface DetectorConfig {
   notify: boolean
 }
 
-export const DEFAULT_CONFIG: DetectorConfig = configSchema.parse({})
+export const DEFAULT_CONFIG: DetectorConfig = v.parse(configSchema, {})
 
 export interface ConfigPaths {
   global: string
@@ -57,7 +60,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function readScope(path: string, issues: string[]): z.infer<typeof fileSchema> | undefined {
+function readScope(path: string, issues: string[]): v.InferOutput<typeof fileSchema> | undefined {
   let source: string
   try {
     source = readFileSync(path, 'utf8')
@@ -79,15 +82,15 @@ function readScope(path: string, issues: string[]): z.infer<typeof fileSchema> |
     return undefined
   }
 
-  const parsed = fileSchema.safeParse(value)
+  const parsed = v.safeParse(fileSchema, value)
   if (!parsed.success) {
-    const details = parsed.error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    const details = parsed.issues.map(issue => `${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`)
     issues.push(`${path}: ${details.join('; ')}`)
 
     return undefined
   }
 
-  return parsed.data
+  return parsed.output
 }
 
 /** Falls back to the defaults when either scope is unusable, rather than applying half a config. */
@@ -101,13 +104,17 @@ export function loadConfig(cwd: string): LoadedConfig {
   }
 
   // A project that ranks one new slug keeps the ranks the global file established.
-  const config = configSchema.parse({ ...global, ...project, tiers: { ...global.tiers, ...project.tiers } })
+  const config = v.parse(configSchema, { ...global, ...project, tiers: { ...global.tiers, ...project.tiers } })
 
   return { config, issues }
 }
 
 export function buildJsonSchema(): Record<string, unknown> {
-  const { $schema, ...schema } = z.toJSONSchema(configSchema, { target: 'draft-2020-12', io: 'input' })
+  const { $schema, ...schema } = toJsonSchema(configSchema, {
+    target: 'draft-2020-12',
+    typeMode: 'input',
+    ignoreActions: ['trim'],
+  })
 
   return { $schema, $id: CONFIG_SCHEMA_URL, ...schema }
 }

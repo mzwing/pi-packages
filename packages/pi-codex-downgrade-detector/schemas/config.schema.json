@@ -8,15 +8,14 @@
       "minLength": 1
     },
     "providers": {
-      "default": ["openai-codex"],
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1
-      }
+      },
+      "default": ["openai-codex"]
     },
     "tiers": {
-      "default": {},
       "type": "object",
       "propertyNames": {
         "type": "string",
@@ -26,16 +25,18 @@
         "type": "integer",
         "minimum": -9007199254740991,
         "maximum": 9007199254740991
-      }
+      },
+      "default": {}
     },
     "checkEffort": {
-      "default": true,
-      "type": "boolean"
+      "type": "boolean",
+      "default": true
     },
     "notify": {
-      "default": true,
-      "type": "boolean"
+      "type": "boolean",
+      "default": true
     }
   },
+  "required": [],
   "additionalProperties": false
 }

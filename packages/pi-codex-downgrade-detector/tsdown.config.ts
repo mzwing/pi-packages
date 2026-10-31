@@ -4,7 +4,8 @@ import { defineConfig } from 'tsdown'
 const config: UserConfig = defineConfig({
   clean: true,
   deps: {
-    neverBundle: ['@earendil-works/pi-ai', '@earendil-works/pi-coding-agent', 'zod'],
+    neverBundle: ['@earendil-works/pi-ai', '@earendil-works/pi-coding-agent'],
+    onlyBundle: ['valibot'],
   },
   dts: true,
   entry: ['src/index.ts'],

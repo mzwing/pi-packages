@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getAgentDir } from '@earendil-works/pi-coding-agent'
-import { z } from 'zod'
+import { toJsonSchema } from '@valibot/to-json-schema'
+import * as v from 'valibot'
 
 export const EXTENSION_ID = 'pi-task-governor'
 const CONFIG_SCHEMA_URL =
@@ -10,64 +11,76 @@ const CONFIG_SCHEMA_URL =
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 const ENV_PROVIDERS = ['auto', 'direnv', 'flake', 'none'] as const
 
+const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
+const maxExecutorsSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1))
 // At its limit a coordinator is reminded to hand off, an executor hands off, and a developer or reviewer must finish.
-const turnsSchema = z.number().int().min(2)
+const turnsSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(2))
 
-const coordinatorSchema = z.strictObject({
-  instructions: z.string().trim().min(1).optional(),
-  maxTurns: turnsSchema.optional(),
+const coordinatorSchema = v.strictObject({
+  instructions: v.optional(nonBlankSchema),
+  maxTurns: v.optional(turnsSchema),
 })
 
-const roleSchema = coordinatorSchema.extend({
-  model: z.string().trim().min(1).optional(),
-  thinking: z.enum(THINKING_LEVELS).optional(),
+const roleSchema = v.strictObject({
+  ...coordinatorSchema.entries,
+  model: v.optional(nonBlankSchema),
+  thinking: v.optional(v.picklist(THINKING_LEVELS)),
 })
 
-const envSchema = z.strictObject({
-  provider: z.enum(ENV_PROVIDERS).optional(),
-  setup: z.array(z.string().trim().min(1)).optional(),
+const envSchema = v.strictObject({
+  provider: v.optional(v.picklist(ENV_PROVIDERS)),
+  setup: v.optional(v.array(nonBlankSchema)),
 })
 
-const checkSchema = z.strictObject({
-  statement: z.string().trim().min(1),
-  check: z.string().trim().min(1),
+const checkSchema = v.strictObject({
+  statement: nonBlankSchema,
+  check: nonBlankSchema,
 })
 
-const fileSchema = z.strictObject({
-  $schema: z.string().min(1).optional(),
-  workspaceRoot: z.string().trim().min(1).optional(),
-  maxExecutors: z.number().int().positive().optional(),
-  defaultBookmark: z.string().trim().min(1).optional(),
-  roles: z
-    .strictObject({
-      coordinator: coordinatorSchema.optional(),
-      executor: roleSchema.optional(),
-      developer: roleSchema.optional(),
-      reviewer: roleSchema.optional(),
-    })
-    .optional(),
-  env: envSchema.optional(),
-  globalChecks: z.array(checkSchema).optional(),
+const fileSchema = v.strictObject({
+  $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
+  workspaceRoot: v.optional(nonBlankSchema),
+  maxExecutors: v.optional(maxExecutorsSchema),
+  defaultBookmark: v.optional(nonBlankSchema),
+  roles: v.optional(
+    v.strictObject({
+      coordinator: v.optional(coordinatorSchema),
+      executor: v.optional(roleSchema),
+      developer: v.optional(roleSchema),
+      reviewer: v.optional(roleSchema),
+    }),
+  ),
+  env: v.optional(envSchema),
+  globalChecks: v.optional(v.array(checkSchema)),
 })
 
-const configSchema = fileSchema.extend({
-  maxExecutors: z.number().int().positive().default(3),
-  defaultBookmark: z.string().trim().min(1).default('main'),
-  roles: z
-    .strictObject({
-      coordinator: coordinatorSchema.extend({ maxTurns: turnsSchema.default(100) }).prefault({}),
-      executor: roleSchema.extend({ maxTurns: turnsSchema.default(100) }).prefault({}),
-      developer: roleSchema.extend({ maxTurns: turnsSchema.default(100) }).prefault({}),
-      reviewer: roleSchema.extend({ maxTurns: turnsSchema.default(40) }).prefault({}),
-    })
-    .prefault({}),
-  env: envSchema
-    .extend({ provider: z.enum(ENV_PROVIDERS).default('auto'), setup: z.array(z.string().trim().min(1)).default([]) })
-    .prefault({}),
-  globalChecks: z.array(checkSchema).default([]),
+const configSchema = v.strictObject({
+  ...fileSchema.entries,
+  maxExecutors: v.optional(maxExecutorsSchema, 3),
+  defaultBookmark: v.optional(nonBlankSchema, 'main'),
+  roles: v.optional(
+    v.strictObject({
+      coordinator: v.optional(
+        v.strictObject({ ...coordinatorSchema.entries, maxTurns: v.optional(turnsSchema, 100) }),
+        {},
+      ),
+      executor: v.optional(v.strictObject({ ...roleSchema.entries, maxTurns: v.optional(turnsSchema, 100) }), {}),
+      developer: v.optional(v.strictObject({ ...roleSchema.entries, maxTurns: v.optional(turnsSchema, 100) }), {}),
+      reviewer: v.optional(v.strictObject({ ...roleSchema.entries, maxTurns: v.optional(turnsSchema, 40) }), {}),
+    }),
+    {},
+  ),
+  env: v.optional(
+    v.strictObject({
+      provider: v.optional(v.picklist(ENV_PROVIDERS), 'auto'),
+      setup: v.optional(v.array(nonBlankSchema), []),
+    }),
+    {},
+  ),
+  globalChecks: v.optional(v.array(checkSchema), []),
 })
 
-type ConfigFile = z.infer<typeof fileSchema>
+type ConfigFile = v.InferOutput<typeof fileSchema>
 
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 export type EnvProvider = (typeof ENV_PROVIDERS)[number]
@@ -83,7 +96,7 @@ interface RoleConfig extends CoordinatorConfig {
   thinking?: ThinkingLevel | undefined
 }
 
-// `isolatedDeclarations` cannot emit a `z.infer` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
 export interface GovernorConfig {
   $schema?: string | undefined
   /** Where task workspaces go; defaults to `<repo>.tasks` beside the repository. */
@@ -100,7 +113,7 @@ export interface GovernorConfig {
   globalChecks: { statement: string; check: string }[]
 }
 
-export const DEFAULT_CONFIG: GovernorConfig = configSchema.parse({})
+export const DEFAULT_CONFIG: GovernorConfig = v.parse(configSchema, {})
 
 export interface LoadedConfig {
   config: GovernorConfig
@@ -132,15 +145,15 @@ function readScope(path: string, issues: string[]): ConfigFile | undefined {
 
     return undefined
   }
-  const parsed = fileSchema.safeParse(value)
+  const parsed = v.safeParse(fileSchema, value)
   if (!parsed.success) {
-    const details = parsed.error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    const details = parsed.issues.map(issue => `${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`)
     issues.push(`${path}: ${details.join('; ')}`)
 
     return undefined
   }
 
-  return parsed.data
+  return parsed.output
 }
 
 export function configPaths(repoRoot: string): { global: string; project: string } {
@@ -162,7 +175,7 @@ export function loadConfig(repoRoot: string, projectTrusted: boolean): LoadedCon
   if (global === undefined || project === undefined) {
     return { config: DEFAULT_CONFIG, issues }
   }
-  const config = configSchema.parse({
+  const config = v.parse(configSchema, {
     ...global,
     ...project,
     roles: {
@@ -178,7 +191,11 @@ export function loadConfig(repoRoot: string, projectTrusted: boolean): LoadedCon
 }
 
 export function buildJsonSchema(): Record<string, unknown> {
-  const { $schema, ...schema } = z.toJSONSchema(configSchema, { target: 'draft-2020-12', io: 'input' })
+  const { $schema, ...schema } = toJsonSchema(configSchema, {
+    target: 'draft-2020-12',
+    typeMode: 'input',
+    ignoreActions: ['trim'],
+  })
 
   return { $schema, $id: CONFIG_SCHEMA_URL, ...schema }
 }

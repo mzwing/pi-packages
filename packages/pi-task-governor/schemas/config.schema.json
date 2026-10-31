@@ -12,22 +12,20 @@
       "minLength": 1
     },
     "maxExecutors": {
-      "default": 3,
       "type": "integer",
-      "exclusiveMinimum": 0,
-      "maximum": 9007199254740991
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "default": 3
     },
     "defaultBookmark": {
-      "default": "main",
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "default": "main"
     },
     "roles": {
-      "default": {},
       "type": "object",
       "properties": {
         "coordinator": {
-          "default": {},
           "type": "object",
           "properties": {
             "instructions": {
@@ -35,16 +33,17 @@
               "minLength": 1
             },
             "maxTurns": {
-              "default": 100,
               "type": "integer",
               "minimum": 2,
-              "maximum": 9007199254740991
+              "maximum": 9007199254740991,
+              "default": 100
             }
           },
-          "additionalProperties": false
+          "required": [],
+          "additionalProperties": false,
+          "default": {}
         },
         "executor": {
-          "default": {},
           "type": "object",
           "properties": {
             "instructions": {
@@ -52,24 +51,25 @@
               "minLength": 1
             },
             "maxTurns": {
-              "default": 100,
               "type": "integer",
               "minimum": 2,
-              "maximum": 9007199254740991
+              "maximum": 9007199254740991,
+              "default": 100
             },
             "model": {
               "type": "string",
               "minLength": 1
             },
             "thinking": {
-              "type": "string",
-              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+              "type": "string"
             }
           },
-          "additionalProperties": false
+          "required": [],
+          "additionalProperties": false,
+          "default": {}
         },
         "developer": {
-          "default": {},
           "type": "object",
           "properties": {
             "instructions": {
@@ -77,24 +77,25 @@
               "minLength": 1
             },
             "maxTurns": {
-              "default": 100,
               "type": "integer",
               "minimum": 2,
-              "maximum": 9007199254740991
+              "maximum": 9007199254740991,
+              "default": 100
             },
             "model": {
               "type": "string",
               "minLength": 1
             },
             "thinking": {
-              "type": "string",
-              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+              "type": "string"
             }
           },
-          "additionalProperties": false
+          "required": [],
+          "additionalProperties": false,
+          "default": {}
         },
         "reviewer": {
-          "default": {},
           "type": "object",
           "properties": {
             "instructions": {
@@ -102,47 +103,51 @@
               "minLength": 1
             },
             "maxTurns": {
-              "default": 40,
               "type": "integer",
               "minimum": 2,
-              "maximum": 9007199254740991
+              "maximum": 9007199254740991,
+              "default": 40
             },
             "model": {
               "type": "string",
               "minLength": 1
             },
             "thinking": {
-              "type": "string",
-              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+              "type": "string"
             }
           },
-          "additionalProperties": false
+          "required": [],
+          "additionalProperties": false,
+          "default": {}
         }
       },
-      "additionalProperties": false
+      "required": [],
+      "additionalProperties": false,
+      "default": {}
     },
     "env": {
-      "default": {},
       "type": "object",
       "properties": {
         "provider": {
-          "default": "auto",
+          "enum": ["auto", "direnv", "flake", "none"],
           "type": "string",
-          "enum": ["auto", "direnv", "flake", "none"]
+          "default": "auto"
         },
         "setup": {
-          "default": [],
           "type": "array",
           "items": {
             "type": "string",
             "minLength": 1
-          }
+          },
+          "default": []
         }
       },
-      "additionalProperties": false
+      "required": [],
+      "additionalProperties": false,
+      "default": {}
     },
     "globalChecks": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "object",
@@ -158,8 +163,10 @@
         },
         "required": ["statement", "check"],
         "additionalProperties": false
-      }
+      },
+      "default": []
     }
   },
+  "required": [],
   "additionalProperties": false
 }

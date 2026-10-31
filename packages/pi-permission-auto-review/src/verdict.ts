@@ -1,10 +1,10 @@
-import { z } from 'zod'
+import * as v from 'valibot'
 
-const assessmentPayloadSchema = z.strictObject({
-  risk_level: z.enum(['low', 'medium', 'high', 'critical']).optional(),
-  user_authorization: z.enum(['unknown', 'low', 'medium', 'high']).optional(),
-  outcome: z.enum(['allow', 'deny']),
-  rationale: z.string().trim().min(1).max(4_000).optional(),
+const assessmentPayloadSchema = v.strictObject({
+  risk_level: v.optional(v.picklist(['low', 'medium', 'high', 'critical'])),
+  user_authorization: v.optional(v.picklist(['unknown', 'low', 'medium', 'high'])),
+  outcome: v.picklist(['allow', 'deny']),
+  rationale: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
 })
 
 type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
@@ -31,7 +31,7 @@ function parseJsonObject(text: string): unknown {
 }
 
 export function parseReviewAssessment(text: string): ReviewAssessment {
-  const payload = assessmentPayloadSchema.parse(parseJsonObject(text))
+  const payload = v.parse(assessmentPayloadSchema, parseJsonObject(text))
   const riskLevel = payload.risk_level ?? (payload.outcome === 'allow' ? 'low' : 'high')
   const rationale =
     payload.rationale ??

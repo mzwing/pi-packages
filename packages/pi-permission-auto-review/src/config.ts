@@ -1,4 +1,5 @@
-import { z } from 'zod'
+import { toJsonSchema } from '@valibot/to-json-schema'
+import * as v from 'valibot'
 
 export const EXTENSION_ID = 'pi-permission-auto-review'
 export const DEFAULT_PROVIDER = 'openai-codex'
@@ -9,41 +10,42 @@ export const CONFIG_SCHEMA_URL =
 
 export const REASONING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
-const timeoutSchema = z.number().int().positive().max(MAX_TIMEOUT_MS)
-const maxRetriesSchema = z.number().int().min(0).max(20)
+const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
+const timeoutSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1), v.maxValue(MAX_TIMEOUT_MS))
+const maxRetriesSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(0), v.maxValue(20))
 
-const fileSchema = z.strictObject({
-  $schema: z.string().min(1).optional(),
-  provider: z.string().trim().min(1).optional(),
-  model: z.string().trim().min(1).optional(),
-  reasoning: z.enum(REASONING_LEVELS).optional(),
-  timeoutMs: timeoutSchema.optional(),
-  maxRetries: maxRetriesSchema.optional(),
-  attemptTimeoutMs: timeoutSchema.optional(),
-  includeBaselinePolicy: z.boolean().optional(),
-  additionalPolicy: z.string().trim().min(1).optional(),
+const fileSchema = v.strictObject({
+  $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
+  provider: v.optional(nonBlankSchema),
+  model: v.optional(nonBlankSchema),
+  reasoning: v.optional(v.picklist(REASONING_LEVELS)),
+  timeoutMs: v.optional(timeoutSchema),
+  maxRetries: v.optional(maxRetriesSchema),
+  attemptTimeoutMs: v.optional(timeoutSchema),
+  includeBaselinePolicy: v.optional(v.boolean()),
+  additionalPolicy: v.optional(nonBlankSchema),
 })
 
-const configSchema = fileSchema
-  .extend({
-    provider: z.string().trim().min(1).default(DEFAULT_PROVIDER),
-    model: z.string().trim().min(1).default(DEFAULT_MODEL),
-    reasoning: z.enum(REASONING_LEVELS).default('low'),
-    timeoutMs: timeoutSchema.default(90_000),
-    maxRetries: maxRetriesSchema.default(2),
-    includeBaselinePolicy: z.boolean().default(true),
-  })
-  .superRefine((config, context) => {
-    if (!config.includeBaselinePolicy && config.additionalPolicy === undefined) {
-      context.addIssue({
-        code: 'custom',
-        message: 'additionalPolicy is required when includeBaselinePolicy is false',
-        path: ['additionalPolicy'],
-      })
-    }
-  })
+const configSchema = v.pipe(
+  v.strictObject({
+    ...fileSchema.entries,
+    provider: v.optional(nonBlankSchema, DEFAULT_PROVIDER),
+    model: v.optional(nonBlankSchema, DEFAULT_MODEL),
+    reasoning: v.optional(v.picklist(REASONING_LEVELS), 'low'),
+    timeoutMs: v.optional(timeoutSchema, 90_000),
+    maxRetries: v.optional(maxRetriesSchema, 2),
+    includeBaselinePolicy: v.optional(v.boolean(), true),
+  }),
+  v.forward(
+    v.check(
+      config => config.includeBaselinePolicy || config.additionalPolicy !== undefined,
+      'additionalPolicy is required when includeBaselinePolicy is false',
+    ),
+    ['additionalPolicy'],
+  ),
+)
 
-// `isolatedDeclarations` cannot emit a `z.infer` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
 export interface AutoReviewConfig {
   $schema?: string | undefined
   provider: string
@@ -58,18 +60,18 @@ export interface AutoReviewConfig {
 
 export type AutoReviewConfigFile = { [K in keyof AutoReviewConfig]?: AutoReviewConfig[K] | undefined }
 
-export const DEFAULT_CONFIG: AutoReviewConfig = configSchema.parse({})
+export const DEFAULT_CONFIG: AutoReviewConfig = v.parse(configSchema, {})
 
 export type ParseResult<T> = { ok: true; config: T } | { ok: false; issue: string }
 
-function formatIssues(error: z.ZodError): string {
-  return error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
+function formatIssues(issues: v.BaseIssue<unknown>[]): string {
+  return issues.map(issue => `${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`).join('; ')
 }
 
 export function validateConfigFile(value: unknown): ParseResult<AutoReviewConfigFile> {
-  const parsed = fileSchema.safeParse(value)
+  const parsed = v.safeParse(fileSchema, value)
 
-  return parsed.success ? { ok: true, config: parsed.data } : { ok: false, issue: formatIssues(parsed.error) }
+  return parsed.success ? { ok: true, config: parsed.output } : { ok: false, issue: formatIssues(parsed.issues) }
 }
 
 export function parseConfigFile(source: string): ParseResult<AutoReviewConfigFile> {
@@ -88,19 +90,23 @@ export function mergeConfig(
   global: AutoReviewConfigFile,
   project: AutoReviewConfigFile,
 ): ParseResult<AutoReviewConfig> {
-  const parsed = configSchema.safeParse({ ...global, ...project })
+  const parsed = v.safeParse(configSchema, { ...global, ...project })
 
-  return parsed.success ? { ok: true, config: parsed.data } : { ok: false, issue: formatIssues(parsed.error) }
+  return parsed.success ? { ok: true, config: parsed.output } : { ok: false, issue: formatIssues(parsed.issues) }
 }
 
 export function buildJsonSchema(): Record<string, unknown> {
-  const { $schema, ...schema } = z.toJSONSchema(configSchema, { target: 'draft-2020-12', io: 'input' })
+  const { $schema, ...schema } = toJsonSchema(configSchema, {
+    target: 'draft-2020-12',
+    typeMode: 'input',
+    ignoreActions: ['trim', 'check'],
+  })
 
   return {
     $schema,
     $id: CONFIG_SCHEMA_URL,
     ...schema,
-    // Mirrors the `superRefine`, which JSON Schema output cannot express on its own.
+    // Mirrors the `check`, which JSON Schema output cannot express on its own.
     allOf: [
       {
         if: { properties: { includeBaselinePolicy: { const: false } }, required: ['includeBaselinePolicy'] },

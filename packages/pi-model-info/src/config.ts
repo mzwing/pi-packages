@@ -2,7 +2,8 @@ import type { AffixRule, ModelCompat, ModelGate, ResolvedConfig, ResolvedProvide
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getAgentDir } from '@earendil-works/pi-coding-agent'
-import { z } from 'zod'
+import { toJsonSchema } from '@valibot/to-json-schema'
+import * as v from 'valibot'
 
 export const EXTENSION_ID = 'pi-model-info'
 const CONFIG_SCHEMA_URL =
@@ -16,9 +17,13 @@ const BUILTIN_RULES: AffixRule[] = [
   { id: 'free-colon', kind: 'suffix', value: ':free', override: { cost: FREE_COST } },
 ]
 
+const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
+const nonNegativeSchema = v.pipe(v.number(), v.minValue(0))
+const positiveIntegerSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1))
+
 // Spelled out rather than derived from THINKING_LEVELS, so the inferred type is the exact map shape.
-const thinkingValue = z.union([z.string(), z.null()]).optional()
-const thinkingLevelMapSchema = z.strictObject({
+const thinkingValue = v.optional(v.nullable(v.string()))
+const thinkingLevelMapSchema = v.strictObject({
   off: thinkingValue,
   minimal: thinkingValue,
   low: thinkingValue,
@@ -28,109 +33,103 @@ const thinkingLevelMapSchema = z.strictObject({
   max: thinkingValue,
 })
 
-const costTierSchema = z.strictObject({
-  input: z.number().min(0),
-  output: z.number().min(0),
-  cacheRead: z.number().min(0),
-  cacheWrite: z.number().min(0),
-  inputTokensAbove: z.number().int().positive(),
+const costTierSchema = v.strictObject({
+  input: nonNegativeSchema,
+  output: nonNegativeSchema,
+  cacheRead: nonNegativeSchema,
+  cacheWrite: nonNegativeSchema,
+  inputTokensAbove: positiveIntegerSchema,
 })
 
-const metadataOverrideSchema = z.strictObject({
-  name: z.string().trim().min(1).optional(),
-  reasoning: z.boolean().optional(),
-  input: z
-    .array(z.enum(['text', 'image']))
-    .min(1)
-    .optional(),
-  cost: z
-    .strictObject({
-      input: z.number().min(0).optional(),
-      output: z.number().min(0).optional(),
-      cacheRead: z.number().min(0).optional(),
-      cacheWrite: z.number().min(0).optional(),
-      tiers: z.array(costTierSchema).optional(),
-    })
-    .optional(),
-  contextWindow: z.number().int().positive().optional(),
-  maxTokens: z.number().int().positive().optional(),
-  thinkingLevelMap: thinkingLevelMapSchema.optional(),
+const metadataOverrideSchema = v.strictObject({
+  name: v.optional(nonBlankSchema),
+  reasoning: v.optional(v.boolean()),
+  input: v.optional(v.pipe(v.array(v.picklist(['text', 'image'])), v.minLength(1))),
+  cost: v.optional(
+    v.strictObject({
+      input: v.optional(nonNegativeSchema),
+      output: v.optional(nonNegativeSchema),
+      cacheRead: v.optional(nonNegativeSchema),
+      cacheWrite: v.optional(nonNegativeSchema),
+      tiers: v.optional(v.array(costTierSchema)),
+    }),
+  ),
+  contextWindow: v.optional(positiveIntegerSchema),
+  maxTokens: v.optional(positiveIntegerSchema),
+  thinkingLevelMap: v.optional(thinkingLevelMapSchema),
   // Pi validates its api-keyed `compat` union on registration; duplicating it here would only go stale.
-  compat: z
-    .custom<ModelCompat>(value => typeof value === 'object' && value !== null && !Array.isArray(value), {
-      message: 'compat must be an object',
-    })
-    .optional(),
+  compat: v.optional(
+    v.custom<ModelCompat>(
+      value => typeof value === 'object' && value !== null && !Array.isArray(value),
+      'compat must be an object',
+    ),
+  ),
 })
 
-const affixRuleSchema = z.strictObject({
-  id: z.string().trim().min(1),
-  kind: z.enum(['prefix', 'suffix']),
-  value: z.string().min(1),
-  enabled: z.boolean().optional(),
-  override: metadataOverrideSchema.optional(),
+const affixRuleSchema = v.strictObject({
+  id: nonBlankSchema,
+  kind: v.picklist(['prefix', 'suffix']),
+  value: v.pipe(v.string(), v.minLength(1)),
+  enabled: v.optional(v.boolean()),
+  override: v.optional(metadataOverrideSchema),
 })
 
-const modelGateSchema = z.strictObject({
-  prefixes: z.array(z.string().trim().min(1)).optional(),
-  suffixes: z.array(z.string().trim().min(1)).optional(),
-  alias: z.string().trim().min(1).optional(),
-  override: metadataOverrideSchema.optional(),
-  skip: z.boolean().optional(),
+const modelGateSchema = v.strictObject({
+  prefixes: v.optional(v.array(nonBlankSchema)),
+  suffixes: v.optional(v.array(nonBlankSchema)),
+  alias: v.optional(nonBlankSchema),
+  override: v.optional(metadataOverrideSchema),
+  skip: v.optional(v.boolean()),
 })
 
-const providerOptInSchema = z.strictObject({
-  catalogProvider: z.string().trim().min(1).optional(),
-  costMultiplier: z.number().min(0).optional(),
-  costPolicy: z.enum(['catalog', 'zero', 'keep']).optional(),
-  contextWindowPolicy: z.enum(['catalog', 'min', 'keep']).optional(),
-  capabilityPolicy: z.enum(['catalog', 'widen', 'keep']).optional(),
-  useCatalogName: z.boolean().optional(),
-  mapThinkingLevels: z.boolean().optional(),
-  allowDynamic: z.boolean().optional(),
-  models: z.record(z.string().trim().min(1), modelGateSchema).optional(),
+const providerOptInSchema = v.strictObject({
+  catalogProvider: v.optional(nonBlankSchema),
+  costMultiplier: v.optional(nonNegativeSchema),
+  costPolicy: v.optional(v.picklist(['catalog', 'zero', 'keep'])),
+  contextWindowPolicy: v.optional(v.picklist(['catalog', 'min', 'keep'])),
+  capabilityPolicy: v.optional(v.picklist(['catalog', 'widen', 'keep'])),
+  useCatalogName: v.optional(v.boolean()),
+  mapThinkingLevels: v.optional(v.boolean()),
+  allowDynamic: v.optional(v.boolean()),
+  models: v.optional(v.record(nonBlankSchema, modelGateSchema)),
 })
 
-const providersSchema = z.record(z.string().trim().min(1), providerOptInSchema)
-
-const fileSchema = z.strictObject({
-  $schema: z.string().min(1).optional(),
-  providers: providersSchema.optional(),
-  aliases: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
-  models: z.record(z.string().trim().min(1), modelGateSchema).optional(),
-  rules: z.array(affixRuleSchema).optional(),
-  builtinRules: z.boolean().optional(),
-  sources: z
-    .array(z.enum(['pi.dev', 'models.dev']))
-    .min(1)
-    .optional(),
-  network: z
-    .strictObject({
-      enabled: z.boolean().optional(),
-      timeoutMs: z.number().int().positive().max(120_000).optional(),
-      maxBytes: z.number().int().positive().optional(),
-    })
-    .optional(),
-  cache: z
-    .strictObject({
-      ttlMs: z.number().int().min(0).optional(),
-      dir: z.string().trim().min(1).optional(),
-    })
-    .optional(),
-  applyOnIdleOnly: z.boolean().optional(),
-})
-
-const configSchema = fileSchema.extend({ providers: providersSchema.default({}) }).superRefine((config, context) => {
-  const seen = new Set<string>()
-  for (const [index, rule] of (config.rules ?? []).entries()) {
-    if (seen.has(rule.id)) {
-      context.addIssue({ code: 'custom', message: `duplicate rule id '${rule.id}'`, path: ['rules', index, 'id'] })
-    }
-    seen.add(rule.id)
-  }
-  if (config.sources && new Set(config.sources).size !== config.sources.length) {
-    context.addIssue({ code: 'custom', message: 'sources must not repeat a value', path: ['sources'] })
-  }
+const fileSchema = v.strictObject({
+  $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
+  providers: v.optional(v.record(nonBlankSchema, providerOptInSchema)),
+  aliases: v.optional(v.record(nonBlankSchema, nonBlankSchema)),
+  models: v.optional(v.record(nonBlankSchema, modelGateSchema)),
+  rules: v.optional(
+    v.pipe(
+      v.array(affixRuleSchema),
+      v.checkItems(
+        (rule, index, rules) => rules.findIndex(other => other.id === rule.id) === index,
+        issue => `duplicate rule id '${issue.input.id}'`,
+      ),
+    ),
+  ),
+  builtinRules: v.optional(v.boolean()),
+  sources: v.optional(
+    v.pipe(
+      v.array(v.picklist(['pi.dev', 'models.dev'])),
+      v.minLength(1),
+      v.checkItems((source, index, sources) => sources.indexOf(source) === index, 'sources must not repeat a value'),
+    ),
+  ),
+  network: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      timeoutMs: v.optional(v.pipe(positiveIntegerSchema, v.maxValue(120_000))),
+      maxBytes: v.optional(positiveIntegerSchema),
+    }),
+  ),
+  cache: v.optional(
+    v.strictObject({
+      ttlMs: v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(0))),
+      dir: v.optional(nonBlankSchema),
+    }),
+  ),
+  applyOnIdleOnly: v.optional(v.boolean()),
 })
 
 export interface LoadedConfig {
@@ -144,11 +143,7 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function formatIssues(error: z.ZodError): string {
-  return error.issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join('; ')
-}
-
-function readScope(path: string, issues: string[]): z.infer<typeof fileSchema> | undefined {
+function readScope(path: string, issues: string[]): v.InferOutput<typeof fileSchema> | undefined {
   let source: string
   try {
     source = readFileSync(path, 'utf8')
@@ -169,14 +164,15 @@ function readScope(path: string, issues: string[]): z.infer<typeof fileSchema> |
 
     return undefined
   }
-  const parsed = fileSchema.safeParse(value)
+  const parsed = v.safeParse(fileSchema, value)
   if (!parsed.success) {
-    issues.push(`${path}: ${formatIssues(parsed.error)}`)
+    const details = parsed.issues.map(issue => `${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`)
+    issues.push(`${path}: ${details.join('; ')}`)
 
     return undefined
   }
 
-  return parsed.data
+  return parsed.output
 }
 
 function orderRules(rules: AffixRule[]): AffixRule[] {
@@ -187,9 +183,9 @@ function orderRules(rules: AffixRule[]): AffixRule[] {
 }
 
 /** Folds the flat sugar into per-provider gates; an unusable entry is reported and dropped, the rest still applies. */
-function resolve(config: z.infer<typeof configSchema>, issue: (message: string) => void): ResolvedConfig {
+function resolve(config: v.InferOutput<typeof fileSchema>, issue: (message: string) => void): ResolvedConfig {
   const providers = new Map<string, ResolvedProvider>()
-  for (const [id, optIn] of Object.entries(config.providers)) {
+  for (const [id, optIn] of Object.entries(config.providers ?? {})) {
     providers.set(id, {
       id,
       catalogProvider: optIn.catalogProvider,
@@ -272,20 +268,16 @@ export function loadConfig(cwd: string): LoadedConfig {
     return { config: undefined, issues }
   }
 
-  const merged = configSchema.safeParse({ ...global, ...project })
-  if (!merged.success) {
-    return { config: undefined, issues: [`${projectPath}: ${formatIssues(merged.error)}`] }
-  }
-
-  return { config: resolve(merged.data, message => issues.push(`${globalPath}: ${message}`)), issues }
+  return { config: resolve({ ...global, ...project }, message => issues.push(`${globalPath}: ${message}`)), issues }
 }
 
 export function buildJsonSchema(): Record<string, unknown> {
-  const { $schema, ...schema } = z.toJSONSchema(configSchema, {
+  const { $schema, ...schema } = toJsonSchema(fileSchema, {
     target: 'draft-2020-12',
-    io: 'input',
+    typeMode: 'input',
+    ignoreActions: ['trim', 'check_items'],
     // `compat` is the one custom node; left unconstrained rather than copying Pi's version-specific union.
-    unrepresentable: 'any',
+    overrideSchema: ({ valibotSchema }) => (valibotSchema.type === 'custom' ? {} : undefined),
   })
 
   return { $schema, $id: CONFIG_SCHEMA_URL, ...schema }

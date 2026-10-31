@@ -11,7 +11,7 @@ pi install npm:@mzwing/pi-session-hub
 pi install npm:@mzwing/pi-task-governor
 ```
 
-Requires Pi 1.3.0 or later and jj 0.46 or later. A repository with an `.envrc` also needs direnv, and one with only a `flake.nix` needs Nix.
+Requires Pi 1.4.0 or later and jj 0.46 or later. A repository with an `.envrc` also needs direnv, and one with only a `flake.nix` needs Nix.
 
 ## Usage
 

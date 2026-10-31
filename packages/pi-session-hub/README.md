@@ -10,7 +10,7 @@ A [Pi](https://github.com/earendil-works/pi) extension that lets the Pi sessions
 pi install npm:@mzwing/pi-session-hub
 ```
 
-Requires Pi 1.3.0 or later.
+Requires Pi 1.4.0 or later.
 
 ## Usage
 

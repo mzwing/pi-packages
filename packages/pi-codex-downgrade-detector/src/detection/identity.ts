@@ -1,4 +1,4 @@
-/** A convenience, never the source of truth: an unranked slug is unrecorded, never fine. */
+/** A convenience, never the source of truth: an unranked slug is unrecorded, never fine */
 const MODEL_TIERS: Record<string, number> = {
   'gpt-6-astra': 100,
   'gpt-6.1-sol': 96,
@@ -30,7 +30,7 @@ const OPENAI_PREFIXES = [
   'babbage',
 ]
 
-/** Smallest first. The class orders two OpenAI slugs before their version does. */
+/** Smallest first. The class orders two OpenAI slugs before their version does */
 const OPENAI_CLASSES = ['luna', 'terra', 'sol', 'astra']
 
 const SMALL_MODEL_MARKERS = new Set([
@@ -52,12 +52,12 @@ const SMALL_MODEL_MARKERS = new Set([
 
 const LARGE_MODEL_MARKERS = new Set(['pro', 'max', 'ultra', 'opus', 'large', 'heavy', 'xl'])
 
-// '5.6' -> [5, 6]; '4o' -> [4] plus a trailing variant token 'o'.
+// '5.6' -> [5, 6]; '4o' -> [4] plus a trailing variant token 'o'
 const VERSION_TOKEN = /^v?(\d+(?:\.\d+)*)([a-z]*)$/
 const SLUG_SPLIT = /[-_/:\s]+/
 
 export interface ModelIdentity {
-  /** Trimmed and lowercased slug. */
+  /** Trimmed and lowercased slug */
   key: string
   vendor: 'openai' | 'other'
   family: string | undefined
@@ -65,10 +65,10 @@ export interface ModelIdentity {
   variant: string | undefined
   sizeMarker: string | undefined
   largeMarker: string | undefined
-  /** Index into `OPENAI_CLASSES`. */
+  /** Index into `OPENAI_CLASSES` */
   classRank: number | undefined
   known: boolean
-  /** The recorded slug this one is, or extends with a server-side suffix. */
+  /** The recorded slug this one is, or extends with a server-side suffix */
   base: string | undefined
   tier: number | undefined
 }
@@ -80,7 +80,7 @@ type SlugShape = Pick<
   'vendor' | 'family' | 'version' | 'variant' | 'sizeMarker' | 'largeMarker' | 'classRank'
 >
 
-/** 'gpt-5.7-mini' parses as openai, family gpt, version [5, 7], marker 'mini' without being recorded anywhere. */
+/** 'gpt-5.7-mini' parses as openai, family gpt, version [5, 7], marker 'mini' without being recorded anywhere */
 function parseSlug(slug: string): SlugShape {
   const vendor = OPENAI_PREFIXES.some(prefix => slug.startsWith(prefix)) ? 'openai' : 'other'
   const [family, ...rest] = slug.split(SLUG_SPLIT).filter(token => token.length > 0)
@@ -94,14 +94,14 @@ function parseSlug(slug: string): SlugShape {
     family,
     version: digits === undefined ? [] : digits.split('.').map(Number),
     variant: tail.length > 0 ? tail.join('-') : undefined,
-    // Markers sit mid-slug too ('claude-opus-5'), not only in the tail.
+    // Markers sit mid-slug too ('claude-opus-5'), not only in the tail
     sizeMarker: rest.find(token => SMALL_MODEL_MARKERS.has(token)),
     largeMarker: rest.find(token => LARGE_MODEL_MARKERS.has(token)),
     classRank: openaiClass === undefined ? undefined : OPENAI_CLASSES.indexOf(openaiClass),
   }
 }
 
-/** Negative when `left` is older, positive when newer, zero when equal. */
+/** Negative when `left` is older, positive when newer, zero when equal */
 export function compareVersions(left: number[], right: number[]): number {
   for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
     const difference = (left[index] ?? 0) - (right[index] ?? 0)
@@ -115,7 +115,7 @@ export function compareVersions(left: number[], right: number[]): number {
 
 /**
  * Resolves a slug against the configured ranks, the built-in table and the slugs Pi's registry offers,
- * then falls back to its shape, so an unrecorded model is still judged rather than waved through.
+ * then falls back to its shape, so an unrecorded model is still judged rather than waved through
  */
 export function createIdentityResolver(tiers: Record<string, number>, registrySlugs: readonly string[]): IdentifyModel {
   const ranks = new Map(Object.entries({ ...MODEL_TIERS, ...tiers }))

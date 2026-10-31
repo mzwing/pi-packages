@@ -19,7 +19,7 @@ describe('task environment', () => {
     for (const [name, contents] of Object.entries(files)) {
       writeFileSync(join(directory, name), contents)
     }
-    // direnv records allowed files here; keep the user's own list out of it.
+    // direnv records allowed files here; keep the user's own list out of it
     vi.stubEnv('XDG_DATA_HOME', join(workspace.root, 'xdg'))
 
     return directory

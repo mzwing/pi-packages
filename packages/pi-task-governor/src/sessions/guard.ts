@@ -15,7 +15,7 @@ import { isOpen } from '../tasks/task.js'
 import { applyChanges } from '../workspace/env.js'
 import { childBinding } from './children.js'
 
-// The shims catch every invocation through PATH, including from scripts, xargs and `sh -c`.
+// The shims catch every invocation through PATH, including from scripts, xargs and `sh -c`
 const SHIMMED_COMMANDS = ['git', 'jj', 'pi']
 const BLOCKED_COMMAND =
   'git, jj and pi are blocked in this governed session: version control goes through the task tools, and only a human can lift this with /governor unlock.'
@@ -34,7 +34,7 @@ export function writeShims(store: string): void {
   }
 }
 
-// The coordinator is the user's own session in the main workspace, so git, jj and pi stay open to it.
+// The coordinator is the user's own session in the main workspace, so git, jj and pi stay open to it
 function isLocked(runtime: Runtime): boolean {
   return runtime.role !== 'coordinator' && (readState(runtime.store).unlocks[runtime.sessionId] ?? 0) <= Date.now()
 }
@@ -52,7 +52,7 @@ function isInside(path: string, directory: string): boolean {
   return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset))
 }
 
-/** Why a write to `path` is refused, or undefined when it may go ahead. */
+/** Why a write to `path` is refused, or undefined when it may go ahead */
 export function writeRefusal(
   state: State,
   runtime: Runtime,
@@ -79,7 +79,7 @@ export function writeRefusal(
 /**
  * Replaces `bash` in a governed session with one whose commands run inside the task's environment, with the git, jj and
  * pi shims first on PATH while the session is locked. The hook rewrites only the spawned process, never the command
- * text that pi-permission-system matches its rules against.
+ * text that pi-permission-system matches its rules against
  */
 export function governBash(pi: ExtensionAPI, ctx: ExtensionContext, currentRuntime: () => Runtime | undefined): void {
   const settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() })

@@ -14,7 +14,7 @@ const OUTPUT_TAIL = 4_000
 
 /**
  * Runs a criterion's check in the workspace, inside the task's environment and behind the git, jj and pi shims. A
- * check that leaves changes in the working copy fails, and its changes are dropped: evidence must not alter the work.
+ * check that leaves changes in the working copy fails, and its changes are dropped: evidence must not alter the work
  */
 export async function runCheck(
   runtime: Pick<Runtime, 'store' | 'environment'>,
@@ -49,7 +49,7 @@ export async function runCheck(
   return { kind: 'check', command, exitCode, output: output.slice(-OUTPUT_TAIL), commit }
 }
 
-/** Every check of a task on its current head, for re-checking a head that a rebase changed. */
+/** Every check of a task on its current head, for re-checking a head that a rebase changed */
 export async function failedChecks(
   runtime: Pick<Runtime, 'store' | 'environment'>,
   workspace: Workspace,

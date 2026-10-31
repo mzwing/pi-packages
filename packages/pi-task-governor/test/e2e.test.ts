@@ -17,13 +17,13 @@ const FAUX_MODEL = fileURLToPath(new URL('fixtures/faux-model.ts', import.meta.u
 
 /**
  * Real `pi --print` executors, with in-process developer and reviewer sessions, driven by a scripted model: this
- * process stands in for the coordinator, runs the scheduler and signs the task off.
+ * process stands in for the coordinator, runs the scheduler and signs the task off
  */
 describe('governed task end to end', () => {
   const workspace = useWorkspace()
 
   beforeAll(() => {
-    // The executor loads both packages as Pi does, from their builds.
+    // The executor loads both packages as Pi does, from their builds
     for (const directory of [HUB, GOVERNOR]) {
       execFileSync('pnpm', ['run', 'build'], { cwd: directory, stdio: 'ignore' })
     }
@@ -43,7 +43,7 @@ describe('governed task end to end', () => {
       state.lease = { sessionId: 'boss', pid: process.pid }
       declareRoot(state, ADD_FILE_SPEC, 'main', [], 'boss', 1)
     })
-    // Under vitest the running script is vitest's; with it hidden, the hub starts the `pi` on PATH.
+    // Under vitest the running script is vitest's; with it hidden, the hub starts the `pi` on PATH
     const script = process.argv[1]
     process.argv[1] = ''
     const notify = vi.fn()

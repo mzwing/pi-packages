@@ -5,7 +5,7 @@ import sessionHub from '../src/index.js'
 
 type Handler = (event: unknown, context: unknown) => unknown
 
-/** A throwaway agent dir under /tmp, since the Unix sockets inside it need a short path. */
+/** A throwaway agent dir under /tmp, since the Unix sockets inside it need a short path */
 export function useAgentDir(): { root: string } {
   const state = { root: '' }
   beforeEach(() => {

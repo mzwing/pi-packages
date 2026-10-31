@@ -9,12 +9,12 @@ const execFileAsync = promisify(execFile)
 const OUTPUT_LIMIT = 64 * 1024 * 1024
 const OUTPUT_TAIL = 4_000
 
-/** How a task's environment differs from the one its sessions inherit; `null` unsets a variable. */
+/** How a task's environment differs from the one its sessions inherit; `null` unsets a variable */
 export type EnvironmentChanges = Record<string, string | null>
 
 export interface TaskEnvironment {
   changes: EnvironmentChanges
-  /** The workspace's copy in the Nix store, deleted with the workspace. */
+  /** The workspace's copy in the Nix store, deleted with the workspace */
   storeCopy?: string | undefined
 }
 
@@ -35,7 +35,7 @@ export function applyChanges(base: NodeJS.ProcessEnv, changes: EnvironmentChange
   return env
 }
 
-/** The exported variables of a flake's dev shell, its PATH ahead of the inherited one. */
+/** The exported variables of a flake's dev shell, its PATH ahead of the inherited one */
 export function flakeChanges(output: string, inheritedPath: string): EnvironmentChanges {
   const { variables } = JSON.parse(output) as DevEnvironment
   const changes: EnvironmentChanges = {}
@@ -65,14 +65,14 @@ function chooseProvider(workspace: string, provider: EnvProvider): Exclude<EnvPr
 async function captureChanges(workspace: string, provider: EnvProvider): Promise<EnvironmentChanges> {
   switch (chooseProvider(workspace, provider)) {
     case 'direnv': {
-      // The workspace's .envrc is the one committed to the task's base, so allowing it trusts nothing new.
+      // The workspace's .envrc is the one committed to the task's base, so allowing it trusts nothing new
       await execFileAsync('direnv', ['allow', workspace])
       const { stdout } = await execFileAsync('direnv', ['export', 'json'], { cwd: workspace, maxBuffer: OUTPUT_LIMIT })
 
       return stdout.trim() === '' ? {} : (JSON.parse(stdout) as EnvironmentChanges)
     }
     case 'flake': {
-      // Without the flag, nix would write a flake.lock into the workspace and so into the task's changes.
+      // Without the flag, nix would write a flake.lock into the workspace and so into the task's changes
       const { stdout } = await execFileAsync('nix', ['print-dev-env', '--json', '--no-write-lock-file', workspace], {
         cwd: workspace,
         maxBuffer: OUTPUT_LIMIT,
@@ -85,7 +85,7 @@ async function captureChanges(workspace: string, provider: EnvProvider): Promise
   }
 }
 
-/** A workspace without .git is a `path:` flake, which Nix copies into its store whole. */
+/** A workspace without .git is a `path:` flake, which Nix copies into its store whole */
 async function findStoreCopy(workspace: string): Promise<string | undefined> {
   if (!existsSync(join(workspace, 'flake.nix'))) {
     return undefined
@@ -111,12 +111,12 @@ async function runSetup(workspace: string, env: NodeJS.ProcessEnv, command: stri
   }
 }
 
-/** The task's own TMPDIR, beside its workspace so jj never snapshots it, and removed with it. */
+/** The task's own TMPDIR, beside its workspace so jj never snapshots it, and removed with it */
 export function temporaryDirectory(workspace: string): string {
   return `${workspace}.tmp`
 }
 
-/** Captures the workspace's environment with the task's own TMPDIR, then runs the setup commands in it. */
+/** Captures the workspace's environment with the task's own TMPDIR, then runs the setup commands in it */
 export async function prepareEnvironment(
   workspace: string,
   provider: EnvProvider,
@@ -125,7 +125,7 @@ export async function prepareEnvironment(
   const temporary = temporaryDirectory(workspace)
   mkdirSync(temporary, { recursive: true })
   const changes = { ...(await captureChanges(workspace, provider)), TMPDIR: temporary }
-  // Located before setup runs, since a lookup after it would copy whatever setup built into the store as well.
+  // Located before setup runs, since a lookup after it would copy whatever setup built into the store as well
   const storeCopy = await findStoreCopy(workspace)
   const env = applyChanges(process.env, changes)
   for (const command of setup) {
@@ -135,7 +135,7 @@ export async function prepareEnvironment(
   return { changes, storeCopy }
 }
 
-/** Deleting the workspace drops its .direnv and .devenv gc roots; this then frees its store copy if nothing else holds it. */
+/** Deleting the workspace drops its .direnv and .devenv gc roots; this then frees its store copy if nothing else holds it */
 export async function releaseEnvironment(environment: TaskEnvironment): Promise<void> {
   if (environment.storeCopy === undefined) {
     return
@@ -143,7 +143,7 @@ export async function releaseEnvironment(environment: TaskEnvironment): Promise<
   try {
     await execFileAsync('nix', ['store', 'delete', environment.storeCopy])
   } catch {
-    // Still alive: another gc root holds the same content, for example the main workspace's own copy.
+    // Still alive: another gc root holds the same content, for example the main workspace's own copy
   }
 }
 

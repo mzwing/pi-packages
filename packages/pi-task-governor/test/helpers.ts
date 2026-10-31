@@ -10,12 +10,12 @@ import { initRepository } from './jj.js'
 
 export interface Workspace {
   root: string
-  /** The main workspace of a colocated jj repository whose `main` bookmark holds `shared.txt`. */
+  /** The main workspace of a colocated jj repository whose `main` bookmark holds `shared.txt` */
   repo: string
   agent: string
 }
 
-// Above every platform's pid range, so it can never be a live process.
+// Above every platform's pid range, so it can never be a live process
 export const DEAD_PID: number = 2 ** 31 - 1
 
 export const PARSER_SPEC: SpecInput = {
@@ -27,7 +27,7 @@ export const PARSER_SPEC: SpecInput = {
   acceptance: [{ statement: 'Tests pass', check: 'pnpm test' }, { statement: 'No API change' }],
 }
 
-/** What the scripted model in `fixtures/faux-model.ts` carries out. */
+/** What the scripted model in `fixtures/faux-model.ts` carries out */
 export const ADD_FILE_SPEC: SpecInput = {
   title: 'Add a.txt',
   problem: 'a.txt is missing',
@@ -39,12 +39,12 @@ export const ADD_FILE_SPEC: SpecInput = {
 
 /**
  * A throwaway root holding a repository and an agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter and jj
- * kept away from the user's own config and identity.
+ * kept away from the user's own config and identity
  */
 export function useWorkspace(): Workspace {
   const workspace: Workspace = { root: '', repo: '', agent: '' }
   beforeEach(() => {
-    // Under /tmp, so the Unix sockets the hub opens inside the agent dir keep a short path.
+    // Under /tmp, so the Unix sockets the hub opens inside the agent dir keep a short path
     workspace.root = realpathSync(mkdtempSync('/tmp/ptg-'))
     workspace.repo = join(workspace.root, 'repo')
     workspace.agent = join(workspace.root, 'agent')
@@ -69,7 +69,7 @@ export function writeJson(path: string, value: unknown): void {
 
 /**
  * Declares a root task in an initialised store, writes `contents` to `file` in a workspace of its own, and has its
- * reviewer sign that commit off, so it waits for the coordinator's sign-off; its executor is gone.
+ * reviewer sign that commit off, so it waits for the coordinator's sign-off; its executor is gone
  */
 export async function signedOff(workspace: Workspace, file: string, contents: string): Promise<string> {
   const store = storeDirectory(workspace.repo)

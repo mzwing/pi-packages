@@ -35,7 +35,7 @@ describe('jj controller', () => {
     writeFileSync(join(workspace.path, file), contents)
   }
 
-  /** The subject lines of the commits `main` took in after `from`, newest first. */
+  /** The subject lines of the commits `main` took in after `from`, newest first */
   function landedSubjects(repo: string, from: string): string[] {
     return jj(repo, 'log', '--no-graph', '-r', `${from}..main`, '-T', 'description.first_line() ++ "\\n"')
       .trim()

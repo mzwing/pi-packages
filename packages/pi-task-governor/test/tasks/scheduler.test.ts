@@ -55,7 +55,7 @@ describe('scheduler', () => {
       }
     })
     const notify = vi.fn<(message: string, wake: boolean) => void>()
-    // Called at the end of every pass that gets past the pause.
+    // Called at the end of every pass that gets past the pause
     const changed = vi.fn()
     const scheduler = createScheduler(
       {
@@ -96,7 +96,7 @@ describe('scheduler', () => {
       env: { TMPDIR: `${claim.workspace.path}.tmp` },
     })
     expect(launched?.prompt).toContain('T1: Fix the parser')
-    // Executors orchestrate; only their developers change code.
+    // Executors orchestrate; only their developers change code
     expect(launched?.tools?.filter(tool => ['bash', 'edit', 'write'].includes(tool))).toEqual([])
   })
 
@@ -141,7 +141,7 @@ describe('scheduler', () => {
   it('hands a task the coordinator answered to a fresh session that sees the answer', async () => {
     const { store, scheduler } = setUp()
     updateState(store, state => {
-      // As task_answer leaves it.
+      // As task_answer leaves it
       const task = claimRoot(
         state,
         'T1',
@@ -341,7 +341,7 @@ describe('scheduler', () => {
     await vi.waitFor(() =>
       expect(notify).toHaveBeenCalledWith(expect.stringContaining(`Merging ${id} into gone failed`), true),
     )
-    // The pass the failed merge starts asks for the sign-off again.
+    // The pass the failed merge starts asks for the sign-off again
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
     const task = readState(store).tasks[id]
     expect([task?.state, task?.approval]).toEqual(['approving', undefined])

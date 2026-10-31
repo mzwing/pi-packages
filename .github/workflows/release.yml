@@ -15,7 +15,7 @@ permissions:
 defaults:
   run:
     # A custom shell string runs a bare `bash {0}`; only the built-in `bash`
-    # shell adds -eo pipefail. Spell it out so a failing command aborts the step.
+    # shell adds -eo pipefail. Spell it out so a failing command aborts the step
     shell: devenv shell -- bash -eo pipefail {0}
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
 
-      # The action runs these commands itself, so the default shell above does not reach them.
+      # The action runs these commands itself, so the default shell above does not reach them
       - name: Create release pull request or publish to NPM
         uses: changesets/action@v1
         with:

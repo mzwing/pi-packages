@@ -1,6 +1,6 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 
-/** The response headers Codex itself reads. */
+/** The response headers Codex itself reads */
 const SERVED_MODEL_HEADERS = ['openai-model', 'x-openai-model']
 const FASTER_MODEL_HEADER = 'x-codex-safety-buffering-faster-model'
 const ROUTING_HEADERS = [
@@ -23,9 +23,9 @@ export interface TurnObservation {
   fasterFallbackModel: string | undefined
   sawRoutingHeaders: boolean
   responseId: string | undefined
-  /** The Pi thinking level the turn went out at, which a virtual model's router may have picked. */
+  /** The Pi thinking level the turn went out at, which a virtual model's router may have picked */
   selectedEffort: string | undefined
-  /** What that level maps to for this model, which is what Pi should have sent. */
+  /** What that level maps to for this model, which is what Pi should have sent */
   expectedEffort: string | undefined
   sentEffort: string | undefined
 }
@@ -41,7 +41,7 @@ function nonBlank(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
-/** Only providers that build the record from a `Headers` object lowercase the names. */
+/** Only providers that build the record from a `Headers` object lowercase the names */
 export function observeHeaders(headers: Record<string, string>): HeaderObservation {
   const byName = new Map(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]))
 
@@ -58,7 +58,7 @@ export function observeSentEffort(payload: unknown): string | undefined {
   return nonBlank(request?.reasoning?.effort) ?? nonBlank(request?.reasoning_effort)
 }
 
-/** The header is server-stated and wins; `responseModel` covers a completions-style relay that drops it. */
+/** The header is server-stated and wins; `responseModel` covers a completions-style relay that drops it */
 export function observeTurn({ message, headers, sentEffort, expectedEffort }: TurnInput): TurnObservation {
   const servedModel = headers?.servedModel ?? message.responseModel
 

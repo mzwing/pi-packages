@@ -9,22 +9,22 @@ const RUNTIME_EXECUTABLE = /^(?:node|bun)(?:\.exe)?$/
 
 export interface SpawnOptions {
   cwd: string
-  /** A new id starts a session; the id of a stopped session of the same cwd continues it. */
+  /** A new id starts a session; the id of a stopped session of the same cwd continues it */
   sessionId: string
   prompt: string
   name?: string | undefined
   model?: string | undefined
   thinking?: string | undefined
   tools?: string[] | undefined
-  /** Further CLI options, placed before the prompt. */
+  /** Further CLI options, placed before the prompt */
   args?: string[] | undefined
-  /** Variables set in the new session's environment over this one's. */
+  /** Variables set in the new session's environment over this one's */
   env?: Record<string, string> | undefined
-  /** The session this one works for; pi-permission-system sends the new session's permission asks there. */
+  /** The session this one works for; pi-permission-system sends the new session's permission asks there */
   parentSessionId?: string | undefined
 }
 
-/** Pi runs either as a script under Node or Bun, or as its compiled binary (`/$bunfs/` scripts). */
+/** Pi runs either as a script under Node or Bun, or as its compiled binary (`/$bunfs/` scripts) */
 function piInvocation(args: string[]): { command: string; args: string[] } {
   const script = process.argv[1]
   if (script !== undefined && !script.startsWith('/$bunfs/') && existsSync(script)) {
@@ -46,7 +46,7 @@ export function logPath(sessionId: string): string {
 
 /**
  * Starts a detached `pi --print` that outlives this process. Print mode reads stdin to its end before it runs, so
- * stdin is closed; the prompt follows `--` so it is never parsed as an option.
+ * stdin is closed; the prompt follows `--` so it is never parsed as an option
  */
 export function spawnSession(options: SpawnOptions): ChildProcess {
   const log = logPath(options.sessionId)
@@ -75,7 +75,7 @@ export function spawnSession(options: SpawnOptions): ChildProcess {
       detached: true,
       stdio: ['ignore', output, output],
     })
-    // Without a listener a failed spawn would crash this process; the missing pid already tells the caller.
+    // Without a listener a failed spawn would crash this process; the missing pid already tells the caller
     child.on('error', error => appendFileSync(log, `${error.message}\n`))
 
     return child

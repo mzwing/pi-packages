@@ -36,13 +36,13 @@ it('lets an alias win over an exact match, and reports a miss rather than fallin
   expect(aliased).toMatchObject({ kind: 'resolved', matchKind: 'alias' })
   expect(canonical(aliased)).toBe('openai/gpt-5.6-sol')
 
-  // Falling through would hide the typo forever behind a plausible result.
+  // Falling through would hide the typo forever behind a plausible result
   const provider = gated('gpt-special', { alias: 'openai/does-not-exist' })
   expect(resolve(index, 'gpt-special', { provider })).toEqual({ kind: 'unresolved', reason: 'alias-miss' })
 })
 
 describe('affix stripping', () => {
-  // Catalogs really do carry `:free` variants as separate entries with their own pricing.
+  // Catalogs really do carry `:free` variants as separate entries with their own pricing
   it('tries the original id before stripping anything', () => {
     const index = makeIndex([{ id: 'deepseek/r1' }, { id: 'deepseek/r1:free' }])
 
@@ -67,7 +67,7 @@ describe('affix stripping', () => {
   })
 
   it('tries a single strip before a double strip', () => {
-    // `m-preview` exists, so `-preview` must survive when only `-free` was needed.
+    // `m-preview` exists, so `-preview` must survive when only `-free` was needed
     const index = makeIndex([{ id: 'x/m' }, { id: 'x/m-preview' }])
 
     expect(canonical(resolve(index, 'm-preview-free', { suffixes: [freeDash] }))).toBe('x/m-preview')

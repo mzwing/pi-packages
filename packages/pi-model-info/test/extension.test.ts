@@ -51,18 +51,18 @@ interface NativeProvider {
 
 interface RegistryOptions {
   models?: SnapshotModel[]
-  /** Image and classifier models, listed only through `getAllModels`. */
+  /** Image and classifier models, listed only through `getAllModels` */
   others?: unknown[]
   registeredConfig?: Record<string, unknown> | undefined
   nativeProvider?: unknown
   dynamic?: boolean
 }
 
-/** One stable provider object, as Pi has, so a wrapper can read the list underneath it later. */
+/** One stable provider object, as Pi has, so a wrapper can read the list underneath it later */
 function createRegistry(options: RegistryOptions = {}) {
   const state = {
     models: options.models ?? [makeSnapshot()],
-    /** What `getRegisteredNativeProvider` reports; a test sets it to replay a `/reload`. */
+    /** What `getRegisteredNativeProvider` reports; a test sets it to replay a `/reload` */
     native: options.nativeProvider,
     registered: options.registeredConfig,
     provider: {
@@ -79,7 +79,7 @@ function createRegistry(options: RegistryOptions = {}) {
   return state
 }
 
-/** Lets the scheduled catalog task run and its fetches settle. */
+/** Lets the scheduled catalog task run and its fetches settle */
 async function settle(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0))
   for (let turn = 0; turn < 20; turn += 1) {
@@ -160,7 +160,7 @@ describe('model info extension', () => {
   }
 
   describe('session start', () => {
-    // Pi awaits `session_start`, so the catalog is fetched after it returns.
+    // Pi awaits `session_start`, so the catalog is fetched after it returns
     it('returns before the catalog resolves, then registers once it does', async () => {
       const harness = setup()
       harness.start()
@@ -188,7 +188,7 @@ describe('model info extension', () => {
       expect(harness.warnings()).toContain('invalid JSON')
     })
 
-    // registerProvider drops a native registration, so completing the provider would delete it.
+    // registerProvider drops a native registration, so completing the provider would delete it
     it('refuses a provider another extension registered natively', async () => {
       const harness = setup({ registry: createRegistry({ nativeProvider: { id: 'relay' } }) })
       harness.start()
@@ -213,7 +213,7 @@ describe('model info extension', () => {
       expect(harness.warnings()).not.toContain('freezes')
     })
 
-    // No event, no re-registration, no next turn: the list is read late.
+    // No event, no re-registration, no next turn: the list is read late
     it('completes a model that appears later, on the next read', async () => {
       const registry = dynamic()
       const harness = setup({ registry })
@@ -225,7 +225,7 @@ describe('model info extension', () => {
       expect(harness.natives).toHaveLength(1)
     })
 
-    // Pi keeps the native registration across a reload, so a second pass has to unwrap to the base.
+    // Pi keeps the native registration across a reload, so a second pass has to unwrap to the base
     it('reuses its wrapper rather than stacking one across a reload', async () => {
       const registry = dynamic()
       const harness = setup({ registry })
@@ -240,7 +240,7 @@ describe('model info extension', () => {
       expect(harness.natives[1]?.getModels()[0]?.contextWindow).toBe(400_000)
     })
 
-    // Pi rebuilds a models.json list above anything registered underneath, so a wrapper would not survive.
+    // Pi rebuilds a models.json list above anything registered underneath, so a wrapper would not survive
     it('falls back to a replacement list, and warns that it freezes, when models.json defines the provider', async () => {
       const harness = setup({
         registry: dynamic(),
@@ -283,7 +283,7 @@ describe('model info extension', () => {
 
       const config = harness.registrations[0]?.config ?? {}
       expect(Object.keys(config)).toEqual(['models', 'refreshModels'])
-      // The provider-level api and baseUrl fill in what the definition left out.
+      // The provider-level api and baseUrl fill in what the definition left out
       expect((await (config['refreshModels'] as Refresh)({}))[0]).toMatchObject({
         contextWindow: 200_000,
         baseUrl: 'http://localhost:8317/v1',
@@ -299,7 +299,7 @@ describe('model info extension', () => {
       expect((await (harness.registrations[0]?.config['refreshModels'] as Refresh)({}))[1]).toBe(IMAGE_MODEL)
     })
 
-    // Pi merges our keys into the sibling's entry, so the next session reads back our own hook.
+    // Pi merges our keys into the sibling's entry, so the next session reads back our own hook
     it('does not stack a decorator on a decorator across a reload', async () => {
       let calls = 0
       const registered = siblingConfig(async () => {
@@ -321,7 +321,7 @@ describe('model info extension', () => {
   })
 
   describe('registration', () => {
-    // pi-openai-api-models-sync registers `{ ...provider, models }`, so the entry holds the relay's credentials.
+    // pi-openai-api-models-sync registers `{ ...provider, models }`, so the entry holds the relay's credentials
     it("sends only models, so a sibling's apiKey survives, and keeps an unresolved model byte for byte", async () => {
       const unknown = makeSnapshot({ id: 'house-model', contextWindow: 65_536, maxTokens: 8_192, reasoning: true })
       const harness = setup({
@@ -337,7 +337,7 @@ describe('model info extension', () => {
       expect(harness.registered()).toEqual([expect.objectContaining({ contextWindow: 400_000 }), unknown])
     })
 
-    // A registered list replaces every model type, while Pi layers virtual models back over any list.
+    // A registered list replaces every model type, while Pi layers virtual models back over any list
     it('carries image and classifier models through, and leaves virtual ones to Pi', async () => {
       const virtual = makeSnapshot({ id: 'auto', api: 'pi-virtual', baseUrl: '' })
       const harness = setup({
@@ -350,7 +350,7 @@ describe('model info extension', () => {
       expect(harness.registered()).toContain(IMAGE_MODEL)
     })
 
-    // Pi falls back to `models[0]` and throws when it cannot resolve api or baseUrl, deleting the provider.
+    // Pi falls back to `models[0]` and throws when it cannot resolve api or baseUrl, deleting the provider
     it('pins api and baseUrl, and carries the fields Pi reads from the model', async () => {
       const model = makeSnapshot({
         headers: { 'x-relay': '1' },
@@ -421,7 +421,7 @@ describe('model info extension', () => {
       expect(harness.registrations).toHaveLength(0)
     })
 
-    // A contextWindow changing mid-turn can flip a compaction decision.
+    // A contextWindow changing mid-turn can flip a compaction decision
     it('defers a mid-turn swap to turn_end', async () => {
       const harness = setup({ config: { providers: { relay: {} }, applyOnIdleOnly: true }, isIdle: false })
       harness.start()

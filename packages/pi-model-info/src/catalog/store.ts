@@ -22,7 +22,7 @@ interface CachedEnvelope {
   fetchedAt: number
   entryCount: number
   entries: CatalogEntry[]
-  /** `Map` does not survive JSON, so the vendor oracle is persisted as pairs. */
+  /** `Map` does not survive JSON, so the vendor oracle is persisted as pairs */
   vendors: [string, string][]
 }
 
@@ -35,7 +35,7 @@ interface SourceStatus {
 
 export interface CatalogSnapshot {
   index: CatalogIndex
-  /** `unavailable` means nothing was loaded, so nothing may be registered. */
+  /** `unavailable` means nothing was loaded, so nothing may be registered */
   status: 'ready' | 'unavailable'
   sources: SourceStatus[]
 }
@@ -44,7 +44,7 @@ function cachePath(config: ResolvedConfig, source: SourceId): string {
   return join(config.cache.dir ?? join(getAgentDir(), 'extensions', EXTENSION_ID, 'cache'), SOURCES[source].file)
 }
 
-/** A corrupt or foreign envelope reads as absent and stays on disk until the next successful fetch replaces it. */
+/** A corrupt or foreign envelope reads as absent and stays on disk until the next successful fetch replaces it */
 function readCache(config: ResolvedConfig, source: SourceId): CachedEnvelope | undefined {
   let envelope: Partial<CachedEnvelope> | null
   try {
@@ -74,18 +74,18 @@ function writeCache(config: ResolvedConfig, envelope: CachedEnvelope): void {
     try {
       rmSync(temporary, { force: true })
     } catch {
-      // The write error is the actionable one.
+      // The write error is the actionable one
     }
     throw error
   }
 }
 
-/** Reads through the stream, so an oversized payload is abandoned rather than buffered whole. */
+/** Reads through the stream, so an oversized payload is abandoned rather than buffered whole */
 async function readCapped(response: Response, maxBytes: number): Promise<string> {
   if (response.body === null) {
     return ''
   }
-  // Node's `undici` types reach us as `any`, so the chunk shape is pinned here.
+  // Node's `undici` types reach us as `any`, so the chunk shape is pinned here
   const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader()
   const decoder = new TextDecoder()
   let text = ''
@@ -105,7 +105,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
   return text + decoder.decode()
 }
 
-/** `undefined` for a 304, meaning the cached copy is still current. */
+/** `undefined` for a 304, meaning the cached copy is still current */
 async function fetchCatalog(
   config: ResolvedConfig,
   source: SourceId,
@@ -141,7 +141,7 @@ async function fetchCatalog(
 export class CatalogStore {
   private readonly errors = new Map<SourceId, string>()
 
-  /** Cache only, so it is safe before any network work has happened. */
+  /** Cache only, so it is safe before any network work has happened */
   load(config: ResolvedConfig): CatalogSnapshot {
     return this.snapshot(
       config,
@@ -165,7 +165,7 @@ export class CatalogStore {
     force: boolean,
   ): Promise<CachedEnvelope | undefined> {
     const cached = readCache(config, source)
-    // Jitter keeps several Pi processes on one machine from expiring together.
+    // Jitter keeps several Pi processes on one machine from expiring together
     const ttl = config.cache.ttlMs * (0.9 + Math.random() * 0.2)
     if (!force && cached !== undefined && Date.now() - cached.fetchedAt < ttl) {
       this.errors.delete(source)
@@ -201,7 +201,7 @@ export class CatalogStore {
         }
       }
     } catch (error) {
-      // An old catalog beats no catalog, and the file on disk stays untouched.
+      // An old catalog beats no catalog, and the file on disk stays untouched
       this.errors.set(source, describeError(error))
 
       return cached
@@ -211,14 +211,14 @@ export class CatalogStore {
     try {
       writeCache(config, envelope)
     } catch (error) {
-      // A cache that cannot be written is a slower extension, not a broken one.
+      // A cache that cannot be written is a slower extension, not a broken one
       this.errors.set(source, `cache write failed: ${describeError(error)}`)
     }
 
     return envelope
   }
 
-  /** `envelopes` line up with `config.sources`, which is priority order. */
+  /** `envelopes` line up with `config.sources`, which is priority order */
   private snapshot(config: ResolvedConfig, envelopes: (CachedEnvelope | undefined)[]): CatalogSnapshot {
     const loaded = envelopes.filter(envelope => envelope !== undefined)
 

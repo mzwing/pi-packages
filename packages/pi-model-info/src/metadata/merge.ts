@@ -16,13 +16,13 @@ export interface MergeInput {
   snapshot: SnapshotModel
   provider: ResolvedProvider
   resolution: Resolution
-  /** Field names the user hand-wrote in models.json `models[]`, which a catalog never overwrites. */
+  /** Field names the user hand-wrote in models.json `models[]`, which a catalog never overwrites */
   userAuthored?: ReadonlySet<string> | undefined
 }
 
 export interface MergeOutput {
   model: ChatModelConfig
-  /** Field name to the layer that produced its final value. */
+  /** Field name to the layer that produced its final value */
   provenance: Map<string, string>
 }
 
@@ -69,7 +69,7 @@ function unionInput(left: ModelInput, right: ModelInput): ModelInput {
   return [...left, ...right].includes('image') ? ['text', 'image'] : ['text']
 }
 
-/** A relay's markup applies to catalog pricing only, never to a rule's explicit `0`. */
+/** A relay's markup applies to catalog pricing only, never to a rule's explicit `0` */
 function scaleCost(cost: CostOverride, multiplier: number): CostOverride {
   if (multiplier === 1) {
     return cost
@@ -94,7 +94,7 @@ function scaleCost(cost: CostOverride, multiplier: number): CostOverride {
 
 /**
  * Everything comes from the single winning entry, filtered by the provider's policies. Only what the winner's
- * source cannot express is backfilled, and only from a same-provider pi.dev donor.
+ * source cannot express is backfilled, and only from a same-provider pi.dev donor
  */
 function catalogLayer(
   { entry, donor }: ResolvedMatch,
@@ -128,11 +128,11 @@ function catalogLayer(
     contextWindow: limit(metadata.contextWindow, snapshot.contextWindow),
     maxTokens: limit(metadata.maxTokens, snapshot.maxTokens),
     cost: provider.costPolicy === 'zero' ? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } : catalogCost,
-    // pi.dev ships a real level map, while one derived from models.dev guesses at provider strings.
+    // pi.dev ships a real level map, while one derived from models.dev guesses at provider strings
     thinkingLevelMap:
       (entry.source === 'pi.dev' || provider.mapThinkingLevels ? metadata.thinkingLevelMap : undefined) ??
       donor?.metadata.thinkingLevelMap,
-    // `compat` is keyed on `api`, so copying it across APIs is wrong even for the same model.
+    // `compat` is keyed on `api`, so copying it across APIs is wrong even for the same model
     compat:
       (entry.api === snapshot.api ? metadata.compat : undefined) ??
       (donor?.api === snapshot.api ? donor.metadata.compat : undefined),
@@ -173,7 +173,7 @@ export function mergeMetadata({ snapshot, provider, resolution, userAuthored }: 
 
   if (resolution.kind === 'resolved') {
     const layer = catalogLayer(resolution, provider, snapshot)
-    // An automatic value never overwrites a hand-written one; an explicit override, being as deliberate, may.
+    // An automatic value never overwrites a hand-written one; an explicit override, being as deliberate, may
     for (const field of userAuthored ?? []) {
       if (isOverrideField(field)) {
         delete layer[field]
@@ -196,7 +196,7 @@ export function mergeMetadata({ snapshot, provider, resolution, userAuthored }: 
     id: snapshot.id,
     name: draft.name,
     // Pinned rather than inherited: Pi falls back to `models[0]` and throws when it cannot resolve these,
-    // which a later recompose turns into a deleted provider.
+    // which a later recompose turns into a deleted provider
     api: snapshot.api,
     baseUrl: snapshot.baseUrl,
     reasoning: draft.reasoning,

@@ -60,7 +60,7 @@ export function registerDeclareTools(pi: ExtensionAPI, host: Host): void {
       async execute(_toolCallId, params) {
         const runtime = requireRole(host.runtime(), 'coordinator')
         const bookmark = params.bookmark ?? readState(runtime.store).config.defaultBookmark
-        // Fails on a bookmark the repository does not have, before anything is declared against it.
+        // Fails on a bookmark the repository does not have, before anything is declared against it
         await bookmarkCommit(runtime.repoRoot, bookmark)
         const brief = updateState(runtime.store, state =>
           renderBrief(state, declareRoot(state, params, bookmark, params.after ?? [], runtime.sessionId, Date.now())),
@@ -132,7 +132,7 @@ export function registerDeclareTools(pi: ExtensionAPI, host: Host): void {
         const root = claimedRoot(state, runtime.sessionId)!
         const focus = focusOf(state, root)
         const workspace = root.claim!.workspace
-        // The subtask's review covers only what changes after this point.
+        // The subtask's review covers only what changes after this point
         await saveWorkingCopy(runtime.repoRoot, workspace, root.base.commit!)
         const head = await headOf(runtime.repoRoot, workspace)
         const brief = updateState(runtime.store, current =>

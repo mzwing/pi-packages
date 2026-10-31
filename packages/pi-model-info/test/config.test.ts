@@ -14,7 +14,7 @@ describe('loadConfig', () => {
     return loadConfig(workspace.cwd)
   }
 
-  // Model ids routinely contain '/', so only a known provider head disambiguates a flat key.
+  // Model ids routinely contain '/', so only a known provider head disambiguates a flat key
   it('splits a flat key at its first separator and folds it into the nested gate', () => {
     const { config, issues } = load({
       providers: { relay: { models: { 'anthropic/claude-x': { skip: false } } } },

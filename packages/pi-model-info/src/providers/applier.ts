@@ -8,23 +8,23 @@ import { resolveModel } from '../metadata/resolver.js'
 import { describeError, warn } from '../util.js'
 import { readUserAuthoredFields } from './models-json.js'
 
-// Global, so a `/reload`, which loads a fresh module instance, still recognises what an earlier one installed.
+// Global, so a `/reload`, which loads a fresh module instance, still recognises what an earlier one installed
 const WRAPPED = Symbol.for('@mzwing/pi-model-info.wrapped-provider')
 const DECORATED = Symbol.for('@mzwing/pi-model-info.refresh-decorator')
 
-/** Pi keys virtual models on this api but does not export its `isVirtualModel`. */
+/** Pi keys virtual models on this api but does not export its `isVirtualModel` */
 const VIRTUAL_API = 'pi-virtual'
 
 type PiModel = Model<Api>
 type RefreshModels = NonNullable<ProviderConfig['refreshModels']>
 
 /**
- * How a provider is completed, chosen per session from what Pi and its siblings already hold.
+ * How a provider is completed, chosen per session from what Pi and its siblings already hold
  *
- * - `native`: the list is wrapped and completed on every read, so it never freezes.
- * - `decorate`: a sibling's `refreshModels` is wrapped, so each refresh returns a completed list.
+ * - `native`: the list is wrapped and completed on every read, so it never freezes
+ * - `decorate`: a sibling's `refreshModels` is wrapped, so each refresh returns a completed list
  * - `replace`: the list is snapshotted and re-registered, which freezes a dynamic list for the session; the only
- *   option when something else owns the registration slot.
+ *   option when something else owns the registration slot
  */
 export type ProviderStrategy = 'native' | 'decorate' | 'replace'
 
@@ -46,13 +46,13 @@ export interface ProviderReport {
 interface Tracked {
   provider: ResolvedProvider
   strategy: ProviderStrategy
-  /** The list as Pi held it before a registration shadowed it. */
+  /** The list as Pi held it before a registration shadowed it */
   snapshot: SnapshotModel[]
-  /** Entries never completed, which a registered list has to carry along. */
+  /** Entries never completed, which a registered list has to carry along */
   others: ProviderModelConfig[]
-  /** `decorate`: the hook handed to Pi, built once so re-applying does not churn it. */
+  /** `decorate`: the hook handed to Pi, built once so re-applying does not churn it */
   refresh?: RefreshModels | undefined
-  /** `decorate`: provider-level fallbacks for a definition that omits them. */
+  /** `decorate`: provider-level fallbacks for a definition that omits them */
   api?: Api | undefined
   baseUrl?: string | undefined
 }
@@ -65,27 +65,27 @@ interface Decorated {
   [DECORATED]: RefreshModels
 }
 
-/** Pi declares `refreshModels` as a method; reading it as a property keeps it a value. */
+/** Pi declares `refreshModels` as a method; reading it as a property keeps it a value */
 interface RefreshCapable {
   refreshModels?: RefreshModels | undefined
 }
 
-/** An entry without `type` is chat, as Pi reads it. */
+/** An entry without `type` is chat, as Pi reads it */
 function isChat<T extends { type?: string | undefined }>(model: T): model is Extract<T, { type?: 'chat' }> {
   return (model.type ?? 'chat') === 'chat'
 }
 
-/** A virtual model only routes to physical ones, and Pi layers the registered ones back over any list. */
+/** A virtual model only routes to physical ones, and Pi layers the registered ones back over any list */
 function chatModels(provider: Provider): PiModel[] {
   return provider.getModels().filter(model => model.api !== VIRTUAL_API)
 }
 
-/** A registered list replaces every model type, so image and classifier models ride along untouched. */
+/** A registered list replaces every model type, so image and classifier models ride along untouched */
 function passthroughModels(provider: Provider): AnyModel[] {
   return (provider.getAllModels?.() ?? []).filter(model => !isChat(model))
 }
 
-/** A registration definition may lean on the provider for `api` and `baseUrl`; a snapshot may not. */
+/** A registration definition may lean on the provider for `api` and `baseUrl`; a snapshot may not */
 function toSnapshot(
   definition: ProviderModelConfig,
   api: Api | undefined,
@@ -118,13 +118,13 @@ export class ProviderApplier {
   private readonly tracked = new Map<string, Tracked>()
   private readonly reports = new Map<string, ProviderReport>()
   private readonly lastRegistered = new Map<string, ProviderModelConfig[]>()
-  /** Outlives `capture`, so a session switch reuses one wrapper per provider instead of nesting them. */
+  /** Outlives `capture`, so a session switch reuses one wrapper per provider instead of nesting them */
   private readonly wrappers = new Map<string, Provider & Wrapped>()
-  /** The catalog each wrapper was last registered with; registering rebuilds Pi's whole model snapshot. */
+  /** The catalog each wrapper was last registered with; registering rebuilds Pi's whole model snapshot */
   private readonly registeredCatalog = new Map<string, string>()
   private config: ResolvedConfig | undefined
   private authored: UserAuthoredMap = new Map()
-  /** The catalog in force, which a wrapper reads at the moment Pi asks it for models. */
+  /** The catalog in force, which a wrapper reads at the moment Pi asks it for models */
   private catalog: CatalogSnapshot | undefined
 
   constructor(pi: ExtensionAPI) {
@@ -134,16 +134,16 @@ export class ProviderApplier {
   /**
    * Chooses a strategy per provider. The registration strategies take the list as Pi holds it now, because
    * afterwards `getProvider(id).getModels()` returns our own list and re-deriving from it would fold every pass
-   * into the next.
+   * into the next
    */
   capture(registry: ModelRegistry, config: ResolvedConfig): void {
     this.releaseStale(registry, config)
     this.config = config
-    // Which models models.json defines decides the strategy, so it is read before any is chosen.
+    // Which models models.json defines decides the strategy, so it is read before any is chosen
     this.authored = config.providers.size === 0 ? new Map() : readUserAuthoredFields()
     this.tracked.clear()
     this.reports.clear()
-    // The config may have changed, so every wrapper owes Pi one fresh pass.
+    // The config may have changed, so every wrapper owes Pi one fresh pass
     this.registeredCatalog.clear()
 
     for (const provider of config.providers.values()) {
@@ -165,7 +165,7 @@ export class ProviderApplier {
     }
   }
 
-  /** Whether a list something else changed under a registration now differs from what was last registered. */
+  /** Whether a list something else changed under a registration now differs from what was last registered */
   reconcile(registry: ModelRegistry): boolean {
     let drifted = false
     for (const [providerId, tracked] of this.tracked) {
@@ -199,12 +199,12 @@ export class ProviderApplier {
       return
     }
     if (native !== undefined && !(WRAPPED in native)) {
-      // registerProvider drops a native registration, so completing this provider would delete it.
+      // registerProvider drops a native registration, so completing this provider would delete it
       this.skip(provider.id, 'another extension registered a native provider for this id')
 
       return
     }
-    // Our wrapper is the outermost layer Pi hands back, so a later pass re-derives from what it wraps.
+    // Our wrapper is the outermost layer Pi hands back, so a later pass re-derives from what it wraps
     const pristine = native === undefined ? live : (native as Provider & Wrapped)[WRAPPED]
     const registered = registry.getRegisteredProviderConfig(provider.id)
 
@@ -226,7 +226,7 @@ export class ProviderApplier {
     const others = passthroughModels(pristine)
     const siblingRefresh = (registered as RefreshCapable | undefined)?.refreshModels
     if (siblingRefresh !== undefined) {
-      // After a `/reload` the sibling's slot holds our own decorator, which must not be decorated again.
+      // After a `/reload` the sibling's slot holds our own decorator, which must not be decorated again
       const original = (siblingRefresh as Partial<Decorated>)[DECORATED] ?? siblingRefresh
       this.track(provider, {
         strategy: 'decorate',
@@ -272,7 +272,7 @@ export class ProviderApplier {
     this.reports.set(providerId, { provider: providerId, status: 'failed', strategy, reason, models })
   }
 
-  /** Only reachable once `capture` and `apply` have run; reads the catalog in force at this moment. */
+  /** Only reachable once `capture` and `apply` have run; reads the catalog in force at this moment */
   private complete(
     provider: ResolvedProvider,
     snapshot: SnapshotModel,
@@ -298,7 +298,7 @@ export class ProviderApplier {
   /**
    * A provider whose `getModels()` completes the list underneath on every read, so whatever refreshes Pi's own
    * dynamic list in place shows new models already completed. Spreading the base is safe only because Pi's own
-   * providers keep their state in closures, never on `this`.
+   * providers keep their state in closures, never on `this`
    */
   private wrap(providerId: string, pristine: Provider): Provider & Wrapped {
     const completions = new WeakMap<PiModel, { catalog: CatalogSnapshot; model: PiModel; report: ModelReport }>()
@@ -316,7 +316,7 @@ export class ProviderApplier {
             return cached
           }
           const { model: completion, report } = this.complete(tracked.provider, model)
-          // Spread over the original, so `provider` and whatever else a registration cannot express survives.
+          // Spread over the original, so `provider` and whatever else a registration cannot express survives
           const fresh = { catalog, model: { ...model, ...completion } as PiModel, report }
           completions.set(model, fresh)
 
@@ -332,7 +332,7 @@ export class ProviderApplier {
 
         return completed.map(entry => entry.model)
       } catch (error) {
-        // Pi treats a throwing `getModels()` as a provider with no models; the uncompleted list is the lesser harm.
+        // Pi treats a throwing `getModels()` as a provider with no models; the uncompleted list is the lesser harm
         warn(`completing '${providerId}' failed: ${describeError(error)}`)
 
         return base
@@ -340,7 +340,7 @@ export class ProviderApplier {
     }
 
     const wrapper: Provider & Wrapped = { ...pristine, [WRAPPED]: pristine, getModels }
-    // Pi's typed reads, `getModelsOfType()` and `getAllAvailable()` among them, list through this instead.
+    // Pi's typed reads, `getModelsOfType()` and `getAllAvailable()` among them, list through this instead
     if (pristine.getAllModels !== undefined) {
       wrapper.getAllModels = () => [...getModels(), ...passthroughModels(pristine)]
     }
@@ -356,7 +356,7 @@ export class ProviderApplier {
       return
     }
     try {
-      // A provider object becomes Pi's base for the id, so its `getModels()` is the last word on the list.
+      // A provider object becomes Pi's base for the id, so its `getModels()` is the last word on the list
       this.pi.registerProvider(this.wrappers.get(providerId)!)
       this.registeredCatalog.set(providerId, fingerprint)
     } catch (error) {
@@ -365,13 +365,13 @@ export class ProviderApplier {
   }
 
   private applyRegistration(providerId: string, tracked: Tracked): void {
-    // Every model, always: a registered list replaces the whole one, so anything left out disappears from Pi.
+    // Every model, always: a registered list replaces the whole one, so anything left out disappears from Pi
     const completed = tracked.snapshot.map(snapshot => this.complete(tracked.provider, snapshot))
     const reports = completed.map(entry => entry.report)
     const models: ProviderModelConfig[] = [...completed.map(entry => entry.model), ...tracked.others]
     try {
       // Only `models` and a sibling's refresh hook: registerProvider merges keys and never expires them, so any
-      // other key would permanently shadow the sibling's, and a relay's apiKey usually lives there.
+      // other key would permanently shadow the sibling's, and a relay's apiKey usually lives there
       this.pi.registerProvider(
         providerId,
         tracked.refresh === undefined ? { models } : { models, refreshModels: tracked.refresh },
@@ -391,7 +391,7 @@ export class ProviderApplier {
 
   /**
    * Completes inside Pi's own refresh: the sibling returns the clean upstream list, and `/model` renders the
-   * completed one in the same pass that fetched it.
+   * completed one in the same pass that fetched it
    */
   private decorate(providerId: string, original: RefreshModels): RefreshModels {
     const decorated = async (context: Parameters<RefreshModels>[0]): Promise<ProviderModelConfig[]> => {
@@ -405,7 +405,7 @@ export class ProviderApplier {
       const completed = tracked.snapshot.map(snapshot => this.complete(tracked.provider, snapshot))
 
       // A definition that could not be typed stays as the sibling wrote it, in place, as does a non-chat entry
-      // sharing a chat model's id.
+      // sharing a chat model's id
       const byId = new Map(completed.map(({ model }) => [model.id, model]))
       const models = fresh.map(definition =>
         isChat(definition) ? (byId.get(definition.id) ?? definition) : definition,
@@ -427,7 +427,7 @@ export class ProviderApplier {
 
   /**
    * A session whose config drops a provider would otherwise leave our registration behind, where a later recompose
-   * could delete the provider outright.
+   * could delete the provider outright
    */
   private releaseStale(registry: ModelRegistry, config: ResolvedConfig): void {
     for (const providerId of this.wrappers.keys()) {
@@ -438,12 +438,12 @@ export class ProviderApplier {
       if (native === undefined || !(WRAPPED in native)) {
         this.wrappers.delete(providerId)
       } else if (registry.getRegisteredProviderConfig(providerId) === undefined) {
-        // unregisterProvider drops the whole entry, so it is only safe while ours is the only one.
+        // unregisterProvider drops the whole entry, so it is only safe while ours is the only one
         this.release(providerId)
       }
     }
     for (const [providerId, models] of this.lastRegistered) {
-      // unregisterProvider would also drop a sibling's baseUrl and apiKey, so leaving ours is the lesser harm.
+      // unregisterProvider would also drop a sibling's baseUrl and apiKey, so leaving ours is the lesser harm
       if (!config.providers.has(providerId) && isSolelyOurs(registry.getRegisteredProviderConfig(providerId), models)) {
         this.release(providerId)
       }

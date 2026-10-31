@@ -1,9 +1,9 @@
-// Reports the upstream Codex Guardian commits since the pinned revision; the policy text is always ported by hand.
+// Reports the upstream Codex Guardian commits since the pinned revision; the policy text is always ported by hand
 //
 //   pnpm sync:policy [--ref <ref>] [--pin]
 //
 // Exits non-zero when upstream moved. Pin only after porting: POLICY_REVISION goes into the permission review log,
-// so a pin that outruns the text is a false audit record. GITHUB_TOKEN lifts the anonymous rate limit.
+// so a pin that outruns the text is a false audit record. GITHUB_TOKEN lifts the anonymous rate limit
 import { readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +20,7 @@ const MANIFEST_PATH = fileURLToPath(new URL('../src/prompt/upstream.ts', import.
 const REVISION_PATTERN = /(export const UPSTREAM_REVISION = ')[\da-f]{40}(')/
 
 const { values } = parseArgs({
-  // pnpm forwards the `--` of `pnpm sync:policy -- --pin`, after which parseArgs would ignore the flag.
+  // pnpm forwards the `--` of `pnpm sync:policy -- --pin`, after which parseArgs would ignore the flag
   args: process.argv.slice(2).filter(argument => argument !== '--'),
   options: {
     ref: { type: 'string', default: 'main' },
@@ -64,7 +64,7 @@ function filePath(file: string): string {
   return `${UPSTREAM_DIRECTORY}/${file}`
 }
 
-/** Commits touching `file` at or below `ref`, newest first. */
+/** Commits touching `file` at or below `ref`, newest first */
 async function history(file: string, ref: string, since?: string): Promise<Commit[]> {
   const query = new URLSearchParams({ path: filePath(file), sha: ref, per_page: '20' })
   if (since !== undefined) {
@@ -81,7 +81,7 @@ if (pinned === undefined) {
 
 const heads = await Promise.all(UPSTREAM_FILES.map(async file => ({ file, commits: await history(file, values.ref) })))
 
-// The commits API does not follow renames, so a file with no history moved away rather than stayed unchanged.
+// The commits API does not follow renames, so a file with no history moved away rather than stayed unchanged
 const unresolved = heads.filter(head => head.commits.length === 0)
 if (unresolved.length > 0) {
   throw new Error(
@@ -90,7 +90,7 @@ if (unresolved.length > 0) {
   )
 }
 
-// The files move independently, so the revision to pin is the newest commit across all of them.
+// The files move independently, so the revision to pin is the newest commit across all of them
 const newest = heads
   .flatMap(head => head.commits.slice(0, 1))
   .reduce((left, right) => (right.committedAt > left.committedAt ? right : left))
@@ -105,7 +105,7 @@ if (newest.sha === UPSTREAM_REVISION) {
 
 console.log(`resolved   ${newest.sha}  (${newest.committedAt})\n`)
 
-// `since` is inclusive, so drop the pinned commit itself from each list.
+// `since` is inclusive, so drop the pinned commit itself from each list
 const landed = await Promise.all(
   UPSTREAM_FILES.map(async file => ({
     file,

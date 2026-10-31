@@ -9,7 +9,7 @@ export type ResolveReviewModelResult =
 
 const CODEX_API = 'openai-codex-responses'
 
-/** `codex-auto-review` is hidden from the registry, so it is derived from another model of the Codex provider. */
+/** `codex-auto-review` is hidden from the registry, so it is derived from another model of the Codex provider */
 export function resolveReviewModel(registry: ModelRegistry, config: AutoReviewConfig): ResolveReviewModelResult {
   const provider = registry.getProvider(config.provider)
   if (provider === undefined) {

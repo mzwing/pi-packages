@@ -109,7 +109,7 @@ describe('governor extension', () => {
       reviews: [{ verdict: 'pass' }, { reviewer: 'boss', verdict: 'fail', findings: 'Duplicates the lexer' }],
     })
     await vi.waitFor(() => expect(readState(storeDirectory(workspace.repo)).tasks[approved]?.state).toBe('done'))
-    // The scheduler removes the merged task's workspace afterwards, which must finish before the repository goes.
+    // The scheduler removes the merged task's workspace afterwards, which must finish before the repository goes
     await vi.waitFor(() => expect(existsSync(`${workspace.repo}.tasks/${approved}`)).toBe(false))
   })
 
@@ -165,7 +165,7 @@ describe('governor extension', () => {
     const governor = loadGovernor({ cwd: workspace.repo, sessionId: 'boss' })
     await governor.start()
     await governor.command('coordinate')
-    // Paused before the task waits for its sign-off, so no sign-off request or fresh executor outlives the test.
+    // Paused before the task waits for its sign-off, so no sign-off request or fresh executor outlives the test
     await governor.command('pause')
     const signed = await signedOff(workspace, 'a.txt', 'a\n')
 

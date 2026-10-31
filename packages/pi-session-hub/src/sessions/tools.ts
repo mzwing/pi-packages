@@ -44,7 +44,7 @@ export async function describeSessions(ctx: ExtensionContext): Promise<string> {
   ].join('\n')
 }
 
-/** `undefined` when no session has the id. */
+/** `undefined` when no session has the id */
 export async function describeTranscript(
   id: string,
   cwd: string,

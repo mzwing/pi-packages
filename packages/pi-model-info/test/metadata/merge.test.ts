@@ -109,7 +109,7 @@ describe('thinking levels', () => {
   })
 })
 
-// `compat` is keyed on `api`, so copying it across APIs is wrong even for the same model.
+// `compat` is keyed on `api`, so copying it across APIs is wrong even for the same model
 it('copies compat only when the api matches', () => {
   const compat = { supportsStrictMode: true } as never
 

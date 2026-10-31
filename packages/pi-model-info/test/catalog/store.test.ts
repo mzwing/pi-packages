@@ -45,7 +45,7 @@ describe('catalog store', () => {
     await refresh()
     expect(fetch).not.toHaveBeenCalled()
 
-    // The ttl is 60s, so at random() = 0 the window is 54s and 55s later is already stale.
+    // The ttl is 60s, so at random() = 0 the window is 54s and 55s later is already stale
     vi.mocked(Math.random).mockReturnValue(0)
     await refresh()
     expect(fetch).toHaveBeenCalledOnce()

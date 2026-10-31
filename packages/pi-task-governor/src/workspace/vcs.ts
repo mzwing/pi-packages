@@ -5,18 +5,18 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
-// The user's own jj config applies; these keep its output machine-readable whatever that config says.
+// The user's own jj config applies; these keep its output machine-readable whatever that config says
 const BASE_ARGUMENTS = ['--no-pager', '--color=never', '--config', 'ui.diff-formatter=:git']
-// Another task can move the bookmark between this task's rebase and its bookmark update.
+// Another task can move the bookmark between this task's rebase and its bookmark update
 const MERGE_ATTEMPTS = 3
 
 export interface Workspace {
-  /** jj's name for it; `<name>@-` is the task's head. */
+  /** jj's name for it; `<name>@-` is the task's head */
   name: string
   path: string
 }
 
-/** `onto` is the bookmark commit the merge built on, where the task's own changes now start. */
+/** `onto` is the bookmark commit the merge built on, where the task's own changes now start */
 export type MergeResult =
   | { kind: 'merged'; commit: string; onto: string }
   | { kind: 'conflicted'; onto: string }
@@ -32,7 +32,7 @@ async function jj(cwd: string, args: string[]): Promise<{ stdout: string; stderr
   }
 }
 
-/** Repository-wide commands never snapshot the user's own working copy in the main workspace. */
+/** Repository-wide commands never snapshot the user's own working copy in the main workspace */
 async function inRepo(repo: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return jj(repo, ['-R', repo, '--ignore-working-copy', ...args])
 }
@@ -68,11 +68,11 @@ async function isAncestor(repo: string, ancestor: string, descendant: string): P
   return stdout.trim() !== ''
 }
 
-/** Checking out the new working copy is part of adding a workspace, so this one command snapshots the main one. */
+/** Checking out the new working copy is part of adding a workspace, so this one command snapshots the main one */
 export async function addWorkspace(repo: string, workspace: Workspace, commit: string): Promise<void> {
-  // jj creates the workspace directory itself but not its parent.
+  // jj creates the workspace directory itself but not its parent
   mkdirSync(dirname(workspace.path), { recursive: true })
-  // Never a Git worktree, even in a colocated repository: the task environment and the developer prompt count on no .git.
+  // Never a Git worktree, even in a colocated repository: the task environment and the developer prompt count on no .git
   await jj(repo, [
     '-R',
     repo,
@@ -92,7 +92,7 @@ export async function removeWorkspace(repo: string, workspace: Workspace): Promi
   rmSync(workspace.path, { recursive: true, force: true })
 }
 
-/** Snapshots the workspace; true when its working copy holds no changes. */
+/** Snapshots the workspace; true when its working copy holds no changes */
 export async function isClean(workspace: Workspace): Promise<boolean> {
   const { stdout } = await jj(workspace.path, ['log', '--no-graph', '-r', '@', '-T', 'empty'])
 
@@ -101,7 +101,7 @@ export async function isClean(workspace: Workspace): Promise<boolean> {
 
 /**
  * Keeps a task's work as one undescribed commit on `base`: the first change becomes it, later ones fold into it. A
- * clean working copy returns false untouched, since squashing nothing would still rewrite the commit.
+ * clean working copy returns false untouched, since squashing nothing would still rewrite the commit
  */
 export async function saveWorkingCopy(repo: string, workspace: Workspace, base: string): Promise<boolean> {
   if (await isClean(workspace)) {
@@ -112,7 +112,7 @@ export async function saveWorkingCopy(repo: string, workspace: Workspace, base: 
   return true
 }
 
-/** Drops working-copy changes, such as files a check rewrote. */
+/** Drops working-copy changes, such as files a check rewrote */
 export async function restoreWorkingCopy(workspace: Workspace): Promise<void> {
   await jj(workspace.path, ['restore'])
 }
@@ -133,7 +133,7 @@ export async function changedFiles(repo: string, from: string, to: string): Prom
   return lines(stdout)
 }
 
-/** Those of `commits` that the bookmark took in after `base`. */
+/** Those of `commits` that the bookmark took in after `base` */
 export async function landedAfter(repo: string, base: string, bookmark: string, commits: string[]): Promise<string[]> {
   if (commits.length === 0) {
     return []
@@ -153,7 +153,7 @@ export async function landedAfter(repo: string, base: string, bookmark: string, 
 /**
  * Merges a signed-off task into its bookmark, which only ever moves forward, with `message` on its commit. A head that
  * does not descend from the bookmark is rebased onto it first: on conflict the rebase stays for the task's executor to
- * resolve, and otherwise `verify` re-runs the checks on the new head.
+ * resolve, and otherwise `verify` re-runs the checks on the new head
  */
 export async function mergeInto(
   repo: string,
@@ -164,7 +164,7 @@ export async function mergeInto(
 ): Promise<MergeResult> {
   for (let attempt = 1; ; attempt += 1) {
     const head = await headOf(repo, workspace)
-    // Pinned, so the ancestor check, the rebase and the result all name one bookmark commit.
+    // Pinned, so the ancestor check, the rebase and the result all name one bookmark commit
     const onto = await bookmarkCommit(repo, bookmark)
     if (!(await isAncestor(repo, onto, head))) {
       await jj(workspace.path, ['rebase', '-b', head, '-o', onto])

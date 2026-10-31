@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, vi } from 'vitest'
 
-/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter. */
+/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter */
 export function useWorkspace(): { cwd: string } {
   const workspace = { cwd: '' }
   let root = ''

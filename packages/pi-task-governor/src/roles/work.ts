@@ -15,14 +15,14 @@ import { diff, headOf, saveWorkingCopy } from '../workspace/vcs.js'
 import { askCoordinator } from './executor.js'
 import { developerPrompt, returnToParentPrompt, reviewerPrompt } from './prompts.js'
 
-// Each time a task fails this many reviews in a row, its executor stops to ask the coordinator how to go on.
+// Each time a task fails this many reviews in a row, its executor stops to ask the coordinator how to go on
 const FAILED_REVIEWS_BEFORE_ASKING = 3
 
 interface Work {
   runtime: Runtime
   state: State
   root: Task
-  /** The deepest open task, where depth-first work happens. */
+  /** The deepest open task, where depth-first work happens */
   focus: Task
   workspace: Workspace
 }
@@ -43,7 +43,7 @@ function currentWork(host: Host): Work {
 }
 
 export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
-  // The developer's last report, which the reviewer receives as a claim to verify.
+  // The developer's last report, which the reviewer receives as a claim to verify
   let lastReport: string | undefined
 
   pi.registerTool(
@@ -134,7 +134,7 @@ export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
             signal,
           )
         } finally {
-          // Whatever cut the review short, such as an error or an abort, its task must not stay in review.
+          // Whatever cut the review short, such as an error or an abort, its task must not stay in review
           if (binding.verdict === undefined) {
             updateState(runtime.store, current => reopen(current, focus.id, 'its review ended unfinished', Date.now()))
           }

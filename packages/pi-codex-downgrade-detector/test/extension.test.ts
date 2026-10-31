@@ -32,7 +32,7 @@ describe('codex downgrade detector', () => {
     harness.emit('message_end', { message })
   }
 
-  // Every extension's status shares one hard-truncated footer line, so the slugs live in a widget row instead.
+  // Every extension's status shares one hard-truncated footer line, so the slugs live in a widget row instead
   it('keeps the footer to one glyph and shows a widget row only while a turn diverges', () => {
     const harness = start()
     expect(harness.ui.statuses).toEqual(['· codex'])
@@ -107,7 +107,7 @@ describe('codex downgrade detector', () => {
     expect(harness.ui.statuses.at(-1)).toBe('✓ codex')
   })
 
-  // A virtual model keeps the selection in the context while its router sends another level.
+  // A virtual model keeps the selection in the context while its router sends another level
   it('judges the level a turn went out at, not the one selected', () => {
     const harness = start()
     harness.context.thinkingLevel = 'high'

@@ -57,7 +57,7 @@ export function readScope(cwd: string, scope: ConfigScope): ScopeSnapshot {
     : { scope, cwd, path, source, valid: false, issue: parsed.issue }
 }
 
-/** The scope as it takes part in the merge: an untrusted project's file is left unread, so it can neither loosen nor break the config. */
+/** The scope as it takes part in the merge: an untrusted project's file is left unread, so it can neither loosen nor break the config */
 export function readActiveScope(cwd: string, scope: ConfigScope, projectTrusted: boolean): ScopeSnapshot {
   return scope === 'project' && !projectTrusted
     ? { scope, cwd, path: configPath(cwd, scope), source: undefined, valid: true, config: {} }
@@ -130,7 +130,7 @@ export function saveScope(
     try {
       rmSync(temporary, { force: true })
     } catch {
-      // The write error is the actionable one.
+      // The write error is the actionable one
     }
 
     return { ok: false, message: `Failed to save config at '${snapshot.path}': ${describeError(error)}` }

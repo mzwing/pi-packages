@@ -52,11 +52,11 @@ function statusText(state: State): string {
 
 /**
  * Undefined outside a governed repository. An executor is started with the store's path and holds its role only if
- * the store names its pid; a coordinator resumed in the TUI takes its lease back.
+ * the store names its pid; a coordinator resumed in the TUI takes its lease back
  */
 function resolveRuntime(ctx: ExtensionContext, storeFlag: string | undefined): Runtime | undefined {
   const sessionId = ctx.sessionManager.getSessionId()
-  // Developers and reviewers run inside their executor's process, which started with the store flag too.
+  // Developers and reviewers run inside their executor's process, which started with the store flag too
   const child = childBinding(sessionId)
   if (child !== undefined) {
     const { store, role, environment } = child
@@ -142,7 +142,7 @@ export default function taskGovernor(pi: ExtensionAPI): void {
       host.changed()
     }
     if (typeof flag === 'string' && resolved.role === undefined) {
-      // Started with a store it holds no task in, such as by hand with an executor's session id: run nothing.
+      // Started with a store it holds no task in, such as by hand with an executor's session id: run nothing
       pi.on('input', () => ({ action: 'handled' }))
     }
   })
@@ -153,7 +153,7 @@ export default function taskGovernor(pi: ExtensionAPI): void {
     }
     const options = event.systemPromptOptions
     const section = roleSection(runtime.role, readState(runtime.store).config)
-    // Pi renders a prompt another extension forced, such as pi-magic-context's, as is and drops every section.
+    // Pi renders a prompt another extension forced, such as pi-magic-context's, as is and drops every section
     if (options.forceSystemPrompt !== undefined) {
       return { systemPrompt: `${event.systemPrompt}\n\n<governor_role>\n${section}\n</governor_role>` }
     }
@@ -162,7 +162,7 @@ export default function taskGovernor(pi: ExtensionAPI): void {
     return undefined
   })
 
-  // pi-permission-system forwards an executor process's asks to the session this names, which a handoff replaces.
+  // pi-permission-system forwards an executor process's asks to the session this names, which a handoff replaces
   pi.on('turn_start', () => {
     if (runtime?.role === undefined || runtime.role === 'coordinator') {
       return
@@ -173,7 +173,7 @@ export default function taskGovernor(pi: ExtensionAPI): void {
     }
   })
 
-  // Counted in turns, since a context manager such as pi-magic-context may keep Pi from ever compacting.
+  // Counted in turns, since a context manager such as pi-magic-context may keep Pi from ever compacting
   let turns = 0
   let reminded = false
   pi.on('turn_end', () => {
@@ -217,7 +217,7 @@ export default function taskGovernor(pi: ExtensionAPI): void {
         label: subcommand,
       })),
     handler: async (args, ctx) => {
-      // Agents can run commands headlessly through `pi -p "/…"`; only the human's TUI may govern.
+      // Agents can run commands headlessly through `pi -p "/…"`; only the human's TUI may govern
       if (ctx.mode !== 'tui') {
         return
       }

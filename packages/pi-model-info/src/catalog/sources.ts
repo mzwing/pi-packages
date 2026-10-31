@@ -14,7 +14,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** Remote JSON delivers `__proto__` and friends as ordinary own keys, which have no business in an index. */
+/** Remote JSON delivers `__proto__` and friends as ordinary own keys, which have no business in an index */
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 function entriesOf(value: unknown): [string, unknown][] {
@@ -53,7 +53,7 @@ export function vendorOf(id: string): string | undefined {
   return separator > 0 && separator < id.length - 1 ? id.slice(0, separator) : undefined
 }
 
-/** Pi accepts only `text` and `image`; absent modalities mean "unknown", not "text only". */
+/** Pi accepts only `text` and `image`; absent modalities mean "unknown", not "text only" */
 function toModelInput(modalities: unknown): ModelInput | undefined {
   if (!isRecord(modalities) || !Array.isArray(modalities['input'])) {
     return undefined
@@ -122,7 +122,7 @@ function toTiers(raw: Record<string, unknown>): ModelCostTier[] | undefined {
     return tiers.length > 0 ? tiers : undefined
   }
 
-  // models.dev's deprecated single-tier spelling, which duplicates `tiers[0]` when both are present.
+  // models.dev's deprecated single-tier spelling, which duplicates `tiers[0]` when both are present
   const legacy = toTier(raw['context_over_200k'], 200_000)
 
   return legacy === undefined ? undefined : [legacy]
@@ -147,7 +147,7 @@ function toThinkingLevelMap(raw: unknown): ThinkingLevelMapInput | undefined {
 
 /**
  * Only the `effort` option maps to the strings Pi sends; `toggle` and `budget_tokens` carry no level names, and
- * inventing one is a 400 on every turn.
+ * inventing one is a 400 on every turn
  */
 function reasoningOptionsToThinkingLevelMap(raw: unknown): ThinkingLevelMapInput | undefined {
   if (!Array.isArray(raw)) {
@@ -164,7 +164,7 @@ function reasoningOptionsToThinkingLevelMap(raw: unknown): ThinkingLevelMapInput
   const map: ThinkingLevelMapInput = {}
   let mapped = false
   for (const level of THINKING_LEVELS) {
-    // models.dev spells Pi's `off` as `none`; the rest are identical.
+    // models.dev spells Pi's `off` as `none`; the rest are identical
     const name = level === 'off' ? 'none' : level
     if (values.has(name)) {
       map[level] = name
@@ -175,7 +175,7 @@ function reasoningOptionsToThinkingLevelMap(raw: unknown): ThinkingLevelMapInput
   return mapped ? map : undefined
 }
 
-/** `{ providerId: { modelId: Model } }`, already in Pi's own shape. */
+/** `{ providerId: { modelId: Model } }`, already in Pi's own shape */
 export function normalizePiDev(payload: unknown): NormalizedSource {
   const entries: CatalogEntry[] = []
 
@@ -214,7 +214,7 @@ export function normalizePiDev(payload: unknown): NormalizedSource {
   return { source: 'pi.dev', entries, vendors: new Map() }
 }
 
-/** `{ "vendor/model": metadata }` — provider-agnostic, and carries no pricing. */
+/** `{ "vendor/model": metadata }` — provider-agnostic, and carries no pricing */
 export function normalizeModelsDev(payload: unknown): NormalizedSource {
   const entries: CatalogEntry[] = []
   const vendors = new Map<string, string>()

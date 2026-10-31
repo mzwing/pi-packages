@@ -5,7 +5,7 @@ import { createConnection, createServer } from 'node:net'
 import { dirname, join } from 'node:path'
 import { hubPath, listJsonFiles, readJson, writeJsonAtomic } from '../files.js'
 
-/** Emitted on `pi.events` in the recipient for every mail it hands to its model. */
+/** Emitted on `pi.events` in the recipient for every mail it hands to its model */
 export const MAIL_EVENT = 'session-hub:mail'
 
 export interface Mail {
@@ -14,7 +14,7 @@ export interface Mail {
   fromName: string | undefined
   to: string
   body: string
-  /** Start a turn in the recipient on delivery, rather than waiting for its next one. */
+  /** Start a turn in the recipient on delivery, rather than waiting for its next one */
   wake: boolean
   sentAt: number
 }
@@ -29,7 +29,7 @@ function mailPath(mail: Mail): string {
   return join(queueDirectory(mail.to), `${mail.sentAt}-${mail.id}.json`)
 }
 
-/** Unix socket paths are capped near 100 bytes, so the socket is named by a short hash of the session id. */
+/** Unix socket paths are capped near 100 bytes, so the socket is named by a short hash of the session id */
 function socketPath(sessionId: string): string {
   return hubPath('sock', `${createHash('sha256').update(sessionId).digest('hex').slice(0, 16)}.sock`)
 }
@@ -44,7 +44,7 @@ export function removeMail(mail: Mail): void {
   rmSync(mailPath(mail), { force: true })
 }
 
-/** False when nothing listens; the mail then waits for the recipient's next start. */
+/** False when nothing listens; the mail then waits for the recipient's next start */
 async function poke(sessionId: string): Promise<boolean> {
   return new Promise(resolve => {
     const socket = createConnection(socketPath(sessionId))
@@ -56,7 +56,7 @@ async function poke(sessionId: string): Promise<boolean> {
   })
 }
 
-/** The queued file is the message; the poke only wakes a running recipient to read it now. */
+/** The queued file is the message; the poke only wakes a running recipient to read it now */
 export async function sendMail(outgoing: OutgoingMail): Promise<{ mail: Mail; woke: boolean }> {
   const mail: Mail = { ...outgoing, id: randomUUID(), sentAt: Date.now() }
   writeJsonAtomic(mailPath(mail), mail)
@@ -67,7 +67,7 @@ export async function sendMail(outgoing: OutgoingMail): Promise<{ mail: Mail; wo
 export async function listenForMail(sessionId: string, onMail: () => void): Promise<Server> {
   const path = socketPath(sessionId)
   mkdirSync(dirname(path), { recursive: true })
-  // A socket file outlives a crashed listener and would refuse the new one.
+  // A socket file outlives a crashed listener and would refuse the new one
   rmSync(path, { force: true })
   const server = createServer(socket => {
     socket.end()

@@ -27,7 +27,7 @@ it('lists the candidates of an ambiguous model, so an alias can pick one', () =>
   expect(text).toContain('Add an alias')
 })
 
-// models.json `modelOverrides` are layered above this extension, so its result is not always what Pi uses.
+// models.json `modelOverrides` are layered above this extension, so its result is not always what Pi uses
 it('shows what Pi actually uses when it differs from the completion', () => {
   const resolved: Resolution = {
     kind: 'resolved',

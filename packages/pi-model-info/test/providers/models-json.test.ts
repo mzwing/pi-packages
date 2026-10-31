@@ -6,7 +6,7 @@ import { useWorkspace, writeFile } from '../helpers.js'
 const workspace = useWorkspace()
 
 // A definition with no tracked field still says models.json defines the provider's list, which rules out
-// completing it through a lazy wrapper.
+// completing it through a lazy wrapper
 it('records the overwritable fields each definition hand-writes, and every definition even with none', () => {
   writeFile(join(workspace.agentDir, 'models.json'), {
     providers: {

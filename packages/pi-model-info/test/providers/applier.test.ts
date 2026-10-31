@@ -15,7 +15,7 @@ const CATALOG: CatalogSnapshot = {
 describe('a provider completed on read', () => {
   useWorkspace()
 
-  /** A dynamic provider nothing else registered for, which the applier therefore wraps. */
+  /** A dynamic provider nothing else registered for, which the applier therefore wraps */
   function wrap(models: SnapshotModel[], others?: unknown[], catalog = CATALOG): Provider {
     const base = {
       id: 'relay',
@@ -47,7 +47,7 @@ describe('a provider completed on read', () => {
     expect(wrap([model]).getModels()[0]).toMatchObject({ provider: 'relay', contextWindow: 400_000 })
   })
 
-  // Pi's typed reads, `getModelsOfType()` and `getAllAvailable()` among them, list through `getAllModels`.
+  // Pi's typed reads, `getModelsOfType()` and `getAllAvailable()` among them, list through `getAllModels`
   it('lists the same completion through getAllModels, next to the models it never completes', () => {
     const image = { id: 'gpt-5.5', type: 'image', api: 'openrouter-images' }
     const wrapper = wrap([makeSnapshot({ id: 'gpt-5.5' })], [image])
@@ -58,7 +58,7 @@ describe('a provider completed on read', () => {
     expect('getAllModels' in wrap([makeSnapshot()])).toBe(false)
   })
 
-  // Pi treats a throwing getModels() as a provider with no models, which would empty the picker.
+  // Pi treats a throwing getModels() as a provider with no models, which would empty the picker
   it('falls back to the base list rather than throwing', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const broken = { status: 'ready', sources: [] } as unknown as CatalogSnapshot

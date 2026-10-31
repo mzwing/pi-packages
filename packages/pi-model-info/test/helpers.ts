@@ -18,7 +18,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { buildCatalogIndex } from '../src/catalog/catalog-index.js'
 import { bareId, vendorOf } from '../src/catalog/sources.js'
 
-/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter. */
+/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter */
 export function useWorkspace(): { cwd: string; agentDir: string } {
   const workspace = { cwd: '', agentDir: '' }
   let root = ''
@@ -41,7 +41,7 @@ export function writeFile(path: string, contents: unknown): void {
   writeFileSync(path, typeof contents === 'string' ? contents : JSON.stringify(contents))
 }
 
-/** Answers catalog requests from `respond`, keyed by the requested URL. */
+/** Answers catalog requests from `respond`, keyed by the requested URL */
 export function stubFetch(
   respond: (url: string, headers: Headers, signal: AbortSignal) => Response | Promise<Response>,
 ): Mock<(url: string | URL, init?: RequestInit) => Promise<Response>> {
@@ -59,7 +59,7 @@ export function json(body: unknown, headers: Record<string, string> = {}): Respo
 
 export interface EntrySpec extends MetadataOverride {
   source?: SourceId
-  /** Defaults to the vendor in `id`, matching how both catalogs are namespaced. */
+  /** Defaults to the vendor in `id`, matching how both catalogs are namespaced */
   provider?: string
   id: string
   api?: Api
@@ -86,7 +86,7 @@ export function makeIndex(specs: EntrySpec[], order: SourceId[] = ['pi.dev', 'mo
     const built = entry(spec)
     const bucket = sources.find(source => source.source === built.source)
     bucket?.entries.push(built)
-    // Only models.dev contributes the vendor oracle, exactly as in production.
+    // Only models.dev contributes the vendor oracle, exactly as in production
     if (built.source === 'models.dev' && built.sourceProvider !== undefined) {
       bucket?.vendors.set(built.sourceId.toLowerCase(), built.sourceProvider)
     }
@@ -124,7 +124,7 @@ export function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedCon
   }
 }
 
-/** Pi's placeholders for a model it knows nothing about. */
+/** Pi's placeholders for a model it knows nothing about */
 export function makeSnapshot(overrides: Partial<SnapshotModel> = {}): SnapshotModel {
   return {
     id: 'gpt-5.5',

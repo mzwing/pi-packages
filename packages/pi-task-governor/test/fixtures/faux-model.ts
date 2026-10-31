@@ -17,7 +17,7 @@ function prompted(context: TranscriptContext): string {
 
 /**
  * Plays each governed role through one task that adds a.txt, choosing its next step from the tools it already ran. The
- * first executor session develops and hands off; the one taking over reviews.
+ * first executor session develops and hands off; the one taking over reviews
  */
 function respond(context: TranscriptContext): AssistantMessage {
   const system = getCurrentSystemPrompt(context.messages)

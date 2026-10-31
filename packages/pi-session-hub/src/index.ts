@@ -34,7 +34,7 @@ function toMessage(mail: Mail): MailMessage {
 
 export default function sessionHub(pi: ExtensionAPI): void {
   let current: { record: SessionRecord; server: Server | undefined } | undefined
-  // Ids of mail handed to Pi whose queue files are still there.
+  // Ids of mail handed to Pi whose queue files are still there
   const pending = new Set<string>()
 
   function deliver(sessionId: string, startTurns: boolean): void {
@@ -51,7 +51,7 @@ export default function sessionHub(pi: ExtensionAPI): void {
     }
   }
 
-  // A queue file goes only once the session holds its mail: Pi sends extensions no message_end for mail written without a turn, and quitting mid-turn drops what it has not written yet.
+  // A queue file goes only once the session holds its mail: Pi sends extensions no message_end for mail written without a turn, and quitting mid-turn drops what it has not written yet
   function confirm(ctx: ExtensionContext): void {
     const queued = readQueue(ctx.sessionManager.getSessionId())
     if (queued.length === 0) {
@@ -92,7 +92,7 @@ export default function sessionHub(pi: ExtensionAPI): void {
     registerSession(record)
     confirm(ctx)
     current = { record, server: await listenForMail(record.id, () => deliver(record.id, true)) }
-    // A session that is only starting has no turn to steer, so queued mail joins its first one.
+    // A session that is only starting has no turn to steer, so queued mail joins its first one
     deliver(record.id, false)
   })
 
@@ -103,7 +103,7 @@ export default function sessionHub(pi: ExtensionAPI): void {
     }
   })
 
-  // Print mode exits once settled, so mail that arrived too late to steer the run is handed over here.
+  // Print mode exits once settled, so mail that arrived too late to steer the run is handed over here
   pi.on('agent_before_settle', (event, ctx) => {
     if (ctx.mode !== 'print' || event.outcome !== 'completed' || current === undefined) {
       return
@@ -127,7 +127,7 @@ export default function sessionHub(pi: ExtensionAPI): void {
     if (ctx.mode === 'print') {
       stopDelivery()
     } else if (event.aborted && ctx.mode === 'tui') {
-      // Stopping a run in the TUI empties Pi's steering queue, dropping mail the run had not reached.
+      // Stopping a run in the TUI empties Pi's steering queue, dropping mail the run had not reached
       pending.clear()
       deliver(ctx.sessionManager.getSessionId(), false)
     }

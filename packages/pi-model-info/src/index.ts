@@ -19,7 +19,7 @@ export default function modelInfo(pi: ExtensionAPI): void {
 
   function applyCatalog(snapshot: CatalogSnapshot): void {
     // A contextWindow changing mid-turn can flip a compaction decision, so the swap waits for the turn to end.
-    // A lazily completed provider reads whatever catalog is in force, so holding it back here covers that too.
+    // A lazily completed provider reads whatever catalog is in force, so holding it back here covers that too
     if (config?.applyOnIdleOnly === true && !isIdle()) {
       pending = snapshot
 
@@ -31,7 +31,7 @@ export default function modelInfo(pi: ExtensionAPI): void {
   }
 
   // A discovery extension registers from its factory, which Pi flushes before any session event, so capturing
-  // here completes its models rather than racing them.
+  // here completes its models rather than racing them
   pi.on('session_start', (_event, ctx) => {
     session?.abort()
     session = undefined
@@ -56,7 +56,7 @@ export default function modelInfo(pi: ExtensionAPI): void {
     const resolved = config
     const controller = new AbortController()
     session = controller
-    // Catalog I/O stays off `session_start`, which Pi awaits.
+    // Catalog I/O stays off `session_start`, which Pi awaits
     setTimeout(() => {
       const run = async (): Promise<void> => {
         if (controller.signal.aborted) {

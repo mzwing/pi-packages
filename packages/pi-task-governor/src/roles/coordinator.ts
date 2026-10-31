@@ -31,7 +31,7 @@ const COORDINATOR_TOOLS: string[] = [
   'task_approve',
   'task_reject',
 ]
-// The coordinator writes task specs; code reaches the repository only through tasks, not through pi-subagents' agents either.
+// The coordinator writes task specs; code reaches the repository only through tasks, not through pi-subagents' agents either
 const WITHHELD_FROM_COORDINATOR = new Set(['edit', 'write', 'session_spawn', 'subagent', 'steer_subagent'])
 
 function describeRun(state: State, task: Task): string {
@@ -60,7 +60,7 @@ export function renderBoard(state: State): string {
   return renderTree(state, task => describeRun(state, task))
 }
 
-/** Hands a root task whose executor waits for the coordinator to a fresh executor session, which finds `event` in its history. */
+/** Hands a root task whose executor waits for the coordinator to a fresh executor session, which finds `event` in its history */
 export function unblock(task: Task, event: string): void {
   const { claim } = task
   if (claim === undefined || !['asking', 'stalled'].includes(executorStatus(claim))) {
@@ -209,7 +209,7 @@ export function registerCoordinatorTools(pi: ExtensionAPI, host: Host): void {
   )
 }
 
-/** Makes this TUI session the repository's coordinator, which also starts governing the repository. */
+/** Makes this TUI session the repository's coordinator, which also starts governing the repository */
 export function coordinate(pi: ExtensionAPI, ctx: ExtensionCommandContext): Runtime {
   const repoRoot = findRepoRoot(ctx.cwd)
   if (repoRoot === undefined) {

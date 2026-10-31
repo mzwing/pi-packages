@@ -3,7 +3,7 @@ import { PI_ADAPTATION_REVISION, UPSTREAM_REVISION } from './upstream.js'
 
 // A Pi rewrite of the Guardian sources in ./upstream.ts, not a copy: Pi's reviewer has no tools and reads a different
 // evidence-provenance model. Upstream's `Execution Environment` section and MCP `connected_account_email` rule stay
-// out, as both describe Codex's sandbox. `pnpm sync:policy` reports the upstream commits to port by hand.
+// out, as both describe Codex's sandbox. `pnpm sync:policy` reports the upstream commits to port by hand
 export const POLICY_REVISION: string = `openai-codex/${UPSTREAM_REVISION}+pi${PI_ADAPTATION_REVISION}`
 
 export const FIXED_REVIEW_PROTOCOL: string = `
@@ -145,7 +145,7 @@ export function buildSystemPrompt(config: AutoReviewConfig): string {
       ? BASELINE_POLICY
       : `# Security Policy\nThe operator disabled the built-in Guardian policy. Apply only the operator policy below for risk taxonomy and outcome rules.`,
   ]
-  // Upstream's `{{ extra_policy }}` slot: the end of the security policy, ahead of the outcome rules that apply it.
+  // Upstream's `{{ extra_policy }}` slot: the end of the security policy, ahead of the outcome rules that apply it
   if (config.additionalPolicy !== undefined) {
     sections.push(`## Operator Policy
 ${config.additionalPolicy}

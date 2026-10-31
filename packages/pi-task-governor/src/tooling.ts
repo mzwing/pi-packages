@@ -4,7 +4,7 @@ import { Type } from 'typebox'
 
 export interface Host {
   runtime: () => Runtime | undefined
-  /** Called after every change to the store made from this session. */
+  /** Called after every change to the store made from this session */
   changed: () => void
 }
 

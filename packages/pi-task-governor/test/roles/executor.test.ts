@@ -35,7 +35,7 @@ describe('executor session', () => {
     return store
   }
 
-  /** T1 claimed by this process, with `contents` written to `file` in a workspace of its own. */
+  /** T1 claimed by this process, with `contents` written to `file` in a workspace of its own */
   async function underWay(file: string, contents: string): Promise<string> {
     const task = { name: 'task-T1', path: join(workspace.root, 'repo.tasks', 'T1') }
     const base = await bookmarkCommit(workspace.repo, 'main')
@@ -53,7 +53,7 @@ describe('executor session', () => {
     return loadGovernor({ cwd: workspace.root, sessionId: 'executor-1', mode: 'print', store })
   }
 
-  /** What the governor's handlers of `name` return, ignoring the ones with nothing to say. */
+  /** What the governor's handlers of `name` return, ignoring the ones with nothing to say */
   async function boundary(session: ReturnType<typeof executor>, name: string, event: object): Promise<unknown> {
     return (await session.emit(name, event)).find(result => result !== undefined)
   }
@@ -163,7 +163,7 @@ describe('executor session', () => {
     await session.emit('tool_execution_end', { toolName: 'task_review', isError: false })
 
     const results: unknown[] = []
-    // One past the limit, as the aborted run's last turn ends.
+    // One past the limit, as the aborted run's last turn ends
     for (let turn = 0; turn < 5; turn += 1) {
       results.push(await boundary(session, 'turn_end', {}))
     }

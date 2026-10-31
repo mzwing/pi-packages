@@ -4,7 +4,7 @@ import { buildSystemPrompt, FIXED_REVIEW_PROTOCOL } from '../../src/prompt/polic
 
 const OPERATOR_POLICY = 'Deny the abstract forbidden operation.'
 
-// Upstream renders operator policy in its `{{ extra_policy }}` slot, closing the security policy.
+// Upstream renders operator policy in its `{{ extra_policy }}` slot, closing the security policy
 it('adds operator policy as restrictive security policy, ahead of the outcome rules that apply it', () => {
   const prompt = buildSystemPrompt({ ...DEFAULT_CONFIG, additionalPolicy: OPERATOR_POLICY })
   const operatorPolicy = prompt.indexOf(`## Operator Policy\n${OPERATOR_POLICY}`)

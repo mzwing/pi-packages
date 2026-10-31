@@ -4,11 +4,11 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent'
 
 /**
  * Provider id → model id → the field names the user hand-wrote. Every definition is recorded, even one with no
- * tracked field, because models.json defining a provider's models already rules out completing it lazily.
+ * tracked field, because models.json defining a provider's models already rules out completing it lazily
  */
 export type UserAuthoredMap = Map<string, Map<string, Set<string>>>
 
-/** Only the fields this extension would otherwise overwrite. */
+/** Only the fields this extension would otherwise overwrite */
 const TRACKED_FIELDS = new Set(['name', 'reasoning', 'input', 'cost', 'contextWindow', 'maxTokens', 'thinkingLevelMap'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -17,7 +17,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Answers what the registry cannot: whether a value was hand-written or is Pi's placeholder. Pi reports a missing
- * or malformed models.json itself, so either reads as authoring nothing.
+ * or malformed models.json itself, so either reads as authoring nothing
  */
 export function readUserAuthoredFields(): UserAuthoredMap {
   const authored: UserAuthoredMap = new Map()

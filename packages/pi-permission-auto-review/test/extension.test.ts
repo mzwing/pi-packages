@@ -40,7 +40,7 @@ describe('permission auto-review extension', () => {
     published.push([sessionId, service])
   }
 
-  /** A registry whose every model answers `reply`, so a reviewer's decisions are observable. */
+  /** A registry whose every model answers `reply`, so a reviewer's decisions are observable */
   function reviewRegistry(reply: string) {
     const streamSimple = vi.fn(() => ({
       result: async () => ({
@@ -136,7 +136,7 @@ describe('permission auto-review extension', () => {
     harness.start()
     expect(registerAuthorizer).not.toHaveBeenCalled()
 
-    // Ready fires at session_start and again at the first before_agent_start.
+    // Ready fires at session_start and again at the first before_agent_start
     harness.ready()
     harness.ready()
     expect(registerAuthorizer).toHaveBeenCalledExactlyOnceWith('auto-review', expect.any(Function))
@@ -175,7 +175,7 @@ describe('permission auto-review extension', () => {
     expect(rootRegister).toHaveBeenCalledOnce()
     expect(childRegister).toHaveBeenCalledOnce()
 
-    // Each instance holds its own handle, so a shutdown never disposes another node's registration.
+    // Each instance holds its own handle, so a shutdown never disposes another node's registration
     child.shutdown()
     expect(childDispose).toHaveBeenCalledOnce()
     expect(rootDispose).not.toHaveBeenCalled()
@@ -325,7 +325,7 @@ describe('permission auto-review extension', () => {
     await harness.run('reset global')
 
     // The old link is released before the new one is offered, so a rejected registration leaves no link at
-    // all rather than a reviewer running the superseded config.
+    // all rather than a reviewer running the superseded config
     expect(firstDispose).toHaveBeenCalledOnce()
     expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining('could not be registered'), 'error')
 

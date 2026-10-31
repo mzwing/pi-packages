@@ -22,7 +22,7 @@ function glyphFor(verdict: Verdict): string {
     return verdict.direction === undefined ? '⚠' : DIRECTION_GLYPHS[verdict.direction]
   }
 
-  // The slug matched, but an armed fallback or a remapped effort still has something to say.
+  // The slug matched, but an armed fallback or a remapped effort still has something to say
   return verdict.level === 'warn' || verdict.level === 'critical' ? '⚠' : '✓'
 }
 
@@ -53,7 +53,7 @@ function describeSource(turn: TurnObservation): string {
   return turn.sawRoutingHeaders ? 'routing headers, but none named a model' : 'no served-model signal'
 }
 
-/** Every extension's status shares one hard-truncated footer line, so this stays one glyph wide. */
+/** Every extension's status shares one hard-truncated footer line, so this stays one glyph wide */
 export function renderStatus(verdict: Verdict, theme: StatusTheme): string {
   return `${theme.fg(LEVEL_COLORS[verdict.level], glyphFor(verdict))} ${theme.fg('dim', LABEL)}`
 }

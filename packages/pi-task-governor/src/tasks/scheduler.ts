@@ -43,13 +43,13 @@ const EXECUTOR_TOOLS: string[] = [
   'task_handoff',
   'session_read',
 ]
-// Executor sessions a task gets between the coordinator's words on it, however each one ends.
+// Executor sessions a task gets between the coordinator's words on it, however each one ends
 const MAX_SESSIONS = 3
 
 export type ExecutorStatus = 'preparing' | 'running' | 'asking' | 'handed-off' | 'stalled' | 'stopped'
 
 export interface Scheduler {
-  /** Brings executors in line with the store; calls during a pass fold into one more pass. */
+  /** Brings executors in line with the store; calls during a pass fold into one more pass */
   tick: () => void
 }
 
@@ -77,7 +77,7 @@ function sequence(task: Task): number {
 /**
  * The other root tasks of `task`'s bookmark that change files it changes, with those files: the ones merged since it
  * started, and the open ones with a workspace. A task's own changes run from its base to its head, which is its merge
- * once it has landed.
+ * once it has landed
  */
 async function overlappingTasks(
   repoRoot: string,
@@ -114,14 +114,14 @@ async function overlappingTasks(
  * Runs in the coordinator, woken by events only: declarations, answers, sign-offs, executor exits and executor mail.
  * It launches executors for root tasks whose turn has come within the budget, gives a task a fresh executor session
  * whenever the last one ended before the task did until it runs out of sessions, asks the coordinator to sign off what
- * passed review and merges what it approved, and removes the workspaces of finished tasks.
+ * passed review and merges what it approved, and removes the workspaces of finished tasks
  */
 export function createScheduler(host: Host, notify: (message: string, wake: boolean) => void): Scheduler {
   let pass: Promise<void> | undefined
   let again = false
-  // By task and review, so a task that passes again is asked about again; a new coordinator session asks anew.
+  // By task and review, so a task that passes again is asked about again; a new coordinator session asks anew
   const requested = new Set<string>()
-  // One merge at a time, so tasks never race each other for the bookmark; the next starts when it ends.
+  // One merge at a time, so tasks never race each other for the bookmark; the next starts when it ends
   let merging = false
 
   function stall(store: string, taskId: string, reason: string): void {
@@ -133,12 +133,12 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
 
   /**
    * Starts a fresh executor session, which takes over from the last one if any. Spawning inside the lock means the
-   * executor, which checks its pid under the same lock, sees it bound.
+   * executor, which checks its pid under the same lock, sees it bound
    */
   function launch(store: string, taskId: string): void {
     updateState(store, state => {
       const task = requireTask(state, taskId)
-      // Cancelled while its workspace was being prepared.
+      // Cancelled while its workspace was being prepared
       if (!isOpen(task)) {
         return
       }
@@ -154,11 +154,11 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
         model,
         thinking,
         tools: EXECUTOR_TOOLS,
-        // `--tools` alone keeps MCP tools, which the executor's fixed tool set leaves out.
+        // `--tools` alone keeps MCP tools, which the executor's fixed tool set leaves out
         args: ['--no-approve', '--no-mcp', `--${STORE_FLAG}`, store],
-        // Pi's own temporary files, and the in-process developers and reviewers, use it too.
+        // Pi's own temporary files, and the in-process developers and reviewers, use it too
         env: { TMPDIR: temporaryDirectory(claim.workspace.path) },
-        // So what would ask in the executor, or in its developers and reviewers, is answered by the coordinator.
+        // So what would ask in the executor, or in its developers and reviewers, is answered by the coordinator
         parentSessionId: state.lease!.sessionId,
       })
       if (child.pid === undefined) {
@@ -216,7 +216,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
     }
     updateState(store, state => {
       const root = requireTask(state, task.id)
-      // A review the stopped executor was running died with it.
+      // A review the stopped executor was running died with it
       reopen(state, focusOf(state, root).id, 'its executor stopped during the review', Date.now())
     })
     launch(store, task.id)
@@ -237,7 +237,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
     notify(`${taskId} went back to its executor: ${reason}`, false)
   }
 
-  /** Merges an approved task exactly as its reviewer signed it off, re-running its checks on a rebased head. */
+  /** Merges an approved task exactly as its reviewer signed it off, re-running its checks on a rebased head */
   async function merge(store: string, repoRoot: string, task: Task): Promise<void> {
     const { workspace } = task.claim!
     const bookmark = task.base.bookmark!
@@ -258,7 +258,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
 
             return Object.values(state.tasks).every(other => !isOpen(other))
           })
-          // Only the merge that finishes the last task wakes the coordinator, which may owe the user its outcome.
+          // Only the merge that finishes the last task wakes the coordinator, which may owe the user its outcome
           notify(
             finished
               ? `${task.id} is merged into ${bookmark}, and every task is finished.`

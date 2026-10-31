@@ -28,7 +28,7 @@ const configSchema = v.strictObject({
   notify: v.optional(v.boolean(), true),
 })
 
-// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step
 export interface DetectorConfig {
   $schema?: string | undefined
   providers: string[]
@@ -93,7 +93,7 @@ function readScope(path: string, issues: string[]): v.InferOutput<typeof fileSch
   return parsed.output
 }
 
-/** Falls back to the defaults when either scope is unusable, rather than applying half a config. */
+/** Falls back to the defaults when either scope is unusable, rather than applying half a config */
 export function loadConfig(cwd: string): LoadedConfig {
   const paths = configPaths(cwd)
   const issues: string[] = []
@@ -103,7 +103,7 @@ export function loadConfig(cwd: string): LoadedConfig {
     return { config: DEFAULT_CONFIG, issues }
   }
 
-  // A project that ranks one new slug keeps the ranks the global file established.
+  // A project that ranks one new slug keeps the ranks the global file established
   const config = v.parse(configSchema, { ...global, ...project, tiers: { ...global.tiers, ...project.tiers } })
 
   return { config, issues }

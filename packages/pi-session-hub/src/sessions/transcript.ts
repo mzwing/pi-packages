@@ -6,9 +6,9 @@ import { buildContextEntries, parseSessionEntries } from '@earendil-works/pi-cod
 type AgentMessage = Extract<SessionEntry, { type: 'message' }>['message']
 
 export interface TranscriptOptions {
-  /** How many items to keep, counting back from the newest. */
+  /** How many items to keep, counting back from the newest */
   last: number
-  /** Include tool results, which are long and usually not what a reader is after. */
+  /** Include tool results, which are long and usually not what a reader is after */
   tools: boolean
 }
 
@@ -79,7 +79,7 @@ function renderEntry(entry: SessionEntry, tools: boolean): string[] {
   }
 }
 
-/** The active branch as the session's model sees it, so a compacted past shows as its summary. */
+/** The active branch as the session's model sees it, so a compacted past shows as its summary */
 export function readTranscript(file: string, options: TranscriptOptions): string {
   const entries = parseSessionEntries(readFileSync(file, 'utf8')).filter(
     (entry): entry is SessionEntry => entry.type !== 'session',

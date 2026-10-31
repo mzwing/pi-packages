@@ -20,7 +20,7 @@ export interface ResolveInput {
 
 interface Hit {
   entry: CatalogEntry
-  /** Same-provider entry from another source, for structural backfill only. */
+  /** Same-provider entry from another source, for structural backfill only */
   donor: CatalogEntry | undefined
   viaVendorSplit: boolean
 }
@@ -30,9 +30,9 @@ type Outcome = { hit: Hit } | { ambiguous: CatalogEntry[] } | undefined
 interface KeyForm {
   scope: string | undefined
   id: string
-  /** This form is scoped by the vendor parsed out of the requested id. */
+  /** This form is scoped by the vendor parsed out of the requested id */
   vendorScoped: boolean
-  /** The vendor the request named, if any. */
+  /** The vendor the request named, if any */
   vendor: string | undefined
 }
 
@@ -40,7 +40,7 @@ interface KeyForm {
  * Vendor qualification is a key form rather than an affix rule: relays overwhelmingly use
  * `vendor/model` ids, and spending the one-prefix budget on that would leave nothing for a real
  * prefix. The vendor-scoped form deliberately precedes the unscoped one, whose bare-id fallback can
- * return several providers — an explicit `anthropic/…` should settle that outright.
+ * return several providers — an explicit `anthropic/…` should settle that outright
  */
 function keyForms(provider: ResolvedProvider, id: string): KeyForm[] {
   const forms: KeyForm[] = []
@@ -64,7 +64,7 @@ function keyForms(provider: ResolvedProvider, id: string): KeyForm[] {
 
 interface Candidates {
   entries: CatalogEntry[]
-  /** True when the verbatim id missed and the vendor-stripped id was used instead. */
+  /** True when the verbatim id missed and the vendor-stripped id was used instead */
   viaBare: boolean
 }
 
@@ -83,7 +83,7 @@ function candidatesFor(index: CatalogIndex, form: KeyForm): Candidates {
 /**
  * The tie-break selects a PROVIDER; insertion order (already source-ranked) then selects the entry.
  * Splicing fields from two providers would be incoherent — the same bare id genuinely differs in
- * price and limits between them.
+ * price and limits between them
  */
 function select(found: Candidates, index: CatalogIndex, provider: ResolvedProvider, form: KeyForm): Outcome {
   const candidates = found.entries
@@ -92,7 +92,7 @@ function select(found: Candidates, index: CatalogIndex, provider: ResolvedProvid
   }
 
   const groups = Map.groupBy(candidates, candidate => (candidate.sourceProvider ?? '').toLowerCase())
-  // A vendor named in the request never reaches the tie-break: `keyForms` already scoped the lookup to it.
+  // A vendor named in the request never reaches the tie-break: `keyForms` already scoped the lookup to it
   const group =
     groups.size === 1
       ? [...groups.values()][0]
@@ -107,9 +107,9 @@ function select(found: Candidates, index: CatalogIndex, provider: ResolvedProvid
   return {
     hit: {
       entry: winner,
-      // pi.dev is the only source carrying `thinkingLevelMap` and `compat`, so the only useful donor.
+      // pi.dev is the only source carrying `thinkingLevelMap` and `compat`, so the only useful donor
       donor: group.find(entry => entry !== winner && entry.source === 'pi.dev'),
-      // The vendor prefix did work: it either scoped the lookup, or only the stripped id matched.
+      // The vendor prefix did work: it either scoped the lookup, or only the stripped id matched
       viaVendorSplit: form.vendorScoped || (found.viaBare && form.vendor !== undefined),
     },
   }
@@ -130,7 +130,7 @@ function matched(hit: Hit, matchKind: MatchKind, prefixRule?: AffixRule, suffixR
   return { kind: 'resolved', entry: hit.entry, donor: hit.donor, matchKind, prefixRule, suffixRule }
 }
 
-/** Removes at most one prefix and one suffix; a no-op or empty residual is not a match. */
+/** Removes at most one prefix and one suffix; a no-op or empty residual is not a match */
 function strip(id: string, prefix: AffixRule | undefined, suffix: AffixRule | undefined): string | undefined {
   let out = id
   if (prefix !== undefined) {
@@ -149,7 +149,7 @@ function strip(id: string, prefix: AffixRule | undefined, suffix: AffixRule | un
   return out.length === 0 || out === id ? undefined : out
 }
 
-/** unset = every rule · `[]` = none · `['id']` = only those. */
+/** unset = every rule · `[]` = none · `['id']` = only those */
 function gateRules(allowed: string[] | undefined, rules: AffixRule[]): AffixRule[] {
   if (allowed === undefined) {
     return rules
@@ -161,7 +161,7 @@ function gateRules(allowed: string[] | undefined, rules: AffixRule[]): AffixRule
 
 /**
  * Single strips before double strips, so `x-preview-free` does not lose `-preview` when only `-free`
- * was needed. Rules arrive longest-value-first, so a broad `-free` cannot shadow `-preview-free`.
+ * was needed. Rules arrive longest-value-first, so a broad `-free` cannot shadow `-preview-free`
  */
 function combinations(prefixes: AffixRule[], suffixes: AffixRule[]): [AffixRule | undefined, AffixRule | undefined][] {
   const combos: [AffixRule | undefined, AffixRule | undefined][] = []
@@ -188,7 +188,7 @@ export function resolveModel(input: ResolveInput): Resolution {
     return { kind: 'unresolved', reason: 'skipped' }
   }
 
-  // An alias miss is reported rather than falling through, which would hide a config typo forever.
+  // An alias miss is reported rather than falling through, which would hide a config typo forever
   if (gate?.alias !== undefined) {
     const outcome = lookup(index, provider, gate.alias)
     if (outcome === undefined) {
@@ -199,7 +199,7 @@ export function resolveModel(input: ResolveInput): Resolution {
   }
 
   // The unstripped id always comes first: catalogs really do carry `:free` and `-free` as distinct
-  // entries with their own pricing.
+  // entries with their own pricing
   const direct = lookup(index, provider, modelId)
   if (direct !== undefined) {
     if ('ambiguous' in direct) {

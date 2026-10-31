@@ -11,7 +11,7 @@ function outgoing(body: string, wake = true) {
   return { from: 'boss', fromName: 'Boss', to: 'worker', body, wake }
 }
 
-/** The entry a session holds once Pi has written the mail. */
+/** The entry a session holds once Pi has written the mail */
 function written(mail: Mail): SessionEntry {
   return {
     type: 'custom_message',
@@ -28,7 +28,7 @@ function written(mail: Mail): SessionEntry {
 describe('session hub extension', () => {
   const agent = useAgentDir()
 
-  /** Queues mail the way another process does, without waking the recipient. */
+  /** Queues mail the way another process does, without waking the recipient */
   function queueSilently(mail: Mail): void {
     const directory = join(agent.root, 'pi-session-hub', 'mail', mail.to)
     mkdirSync(directory, { recursive: true })
@@ -76,7 +76,7 @@ describe('session hub extension', () => {
 
     await hub.emit('agent_settled', { aborted: false }, holding)
     expect(readQueue('worker').map(mail => mail.body)).toEqual(['fyi'])
-    // Quitting before Pi writes the rest keeps it queued for the next start.
+    // Quitting before Pi writes the rest keeps it queued for the next start
     await hub.emit('session_shutdown', {}, holding)
     expect(readQueue('worker').map(mail => mail.body)).toEqual(['fyi'])
   })

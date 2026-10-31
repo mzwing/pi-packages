@@ -45,7 +45,7 @@ const configSchema = v.pipe(
   ),
 )
 
-// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step
 export interface AutoReviewConfig {
   $schema?: string | undefined
   provider: string
@@ -85,7 +85,7 @@ export function parseConfigFile(source: string): ParseResult<AutoReviewConfigFil
   return validateConfigFile(value)
 }
 
-/** Project fields override global ones; the cross-field rule can only be judged on the merge. */
+/** Project fields override global ones; the cross-field rule can only be judged on the merge */
 export function mergeConfig(
   global: AutoReviewConfigFile,
   project: AutoReviewConfigFile,
@@ -106,7 +106,7 @@ export function buildJsonSchema(): Record<string, unknown> {
     $schema,
     $id: CONFIG_SCHEMA_URL,
     ...schema,
-    // Mirrors the `check`, which JSON Schema output cannot express on its own.
+    // Mirrors the `check`, which JSON Schema output cannot express on its own
     allOf: [
       {
         if: { properties: { includeBaselinePolicy: { const: false } }, required: ['includeBaselinePolicy'] },

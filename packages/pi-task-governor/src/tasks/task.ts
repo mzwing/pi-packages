@@ -5,7 +5,7 @@ type TaskState = 'declared' | 'claimed' | 'reviewing' | 'approving' | 'done' | '
 export interface Criterion {
   id: string
   statement: string
-  /** Shell command the controller runs in the workspace; exit 0 means the criterion holds. */
+  /** Shell command the controller runs in the workspace; exit 0 means the criterion holds */
   check?: string | undefined
 }
 
@@ -20,9 +20,9 @@ export interface SpecInput {
 
 interface Spec {
   problem: string
-  /** What the task changes: its intension. */
+  /** What the task changes: its intension */
   scope: string
-  /** Which code and behaviour it may reach: its extension. */
+  /** Which code and behaviour it may reach: its extension */
   boundary: string
   nonGoals: string[]
   acceptance: Criterion[]
@@ -47,20 +47,20 @@ export interface Review {
   at: number
 }
 
-/** Held by root tasks only; a subtask is worked by its root's executor in the root's workspace. */
+/** Held by root tasks only; a subtask is worked by its root's executor in the root's workspace */
 export interface Claim {
-  /** Of the executor session working the task, or of the last one; undefined until the first starts. */
+  /** Of the executor session working the task, or of the last one; undefined until the first starts */
   sessionId: string | undefined
-  /** Of the executor process while it runs; a session presenting the id from another pid is not the claimer. */
+  /** Of the executor process while it runs; a session presenting the id from another pid is not the claimer */
   pid: number | undefined
   workspace: { name: string; path: string }
-  /** Executor sessions started since the coordinator last answered, revised, approved or sent back the task. */
+  /** Executor sessions started since the coordinator last answered, revised, approved or sent back the task */
   sessions: number
   question?: string | undefined
   stalled?: string | undefined
   /**
    * The last executor session ended on purpose rather than giving up: it handed off, the coordinator answered it, or
-   * the task came back. The task's log tells the new session which.
+   * the task came back. The task's log tells the new session which
    */
   handoff?: boolean | undefined
 }
@@ -72,20 +72,20 @@ export interface Task {
   spec: Spec
   /**
    * A root task branches from `bookmark` and merges back into it. `commit` is where the task's own changes start: pinned
-   * when work on the task starts, and moved whenever a merge, landed or not, takes in newer work from the bookmark.
+   * when work on the task starts, and moved whenever a merge, landed or not, takes in newer work from the bookmark
    */
   base: { bookmark?: string | undefined; commit?: string | undefined }
-  /** Root tasks of the same bookmark that must be merged before this one starts. */
+  /** Root tasks of the same bookmark that must be merged before this one starts */
   after?: string[] | undefined
   state: TaskState
   declaredBy: string
   claim?: Claim | undefined
-  /** What the executor carries to whoever works the task next. */
+  /** What the executor carries to whoever works the task next */
   note?: string | undefined
   reviews: Review[]
   signedBy?: string | undefined
   signedCommit?: string | undefined
-  /** The coordinator session's sign-off of a reviewed root task, with the message its commit lands with. */
+  /** The coordinator session's sign-off of a reviewed root task, with the message its commit lands with */
   approval?: { by: string; commitMessage: string } | undefined
   merged?: string | undefined
   log: { at: number; event: string }[]
@@ -93,13 +93,13 @@ export interface Task {
 
 export interface State {
   seq: number
-  /** `handoff` marks a lease the next session of the same TUI process takes over. */
+  /** `handoff` marks a lease the next session of the same TUI process takes over */
   lease?: { sessionId: string; pid: number; handoff?: boolean | undefined } | undefined
   paused: boolean
   tasks: Record<string, Task>
-  /** Session id to the time its git and jj unlock ends. */
+  /** Session id to the time its git and jj unlock ends */
   unlocks: Record<string, number>
-  /** The coordinator's config; executors run where the project config is not trusted, so they read this copy. */
+  /** The coordinator's config; executors run where the project config is not trusted, so they read this copy */
   config: GovernorConfig
 }
 
@@ -128,7 +128,7 @@ function childrenOf(state: State, id: string): Task[] {
   return Object.values(state.tasks).filter(task => task.parentId === id)
 }
 
-/** The open root task an executor session works on. */
+/** The open root task an executor session works on */
 export function claimedRoot(state: State, sessionId: string): Task | undefined {
   return Object.values(state.tasks).find(
     task => task.parentId === undefined && isOpen(task) && task.claim?.sessionId === sessionId,
@@ -143,7 +143,7 @@ function claimOf(state: State, task: Task): Claim | undefined {
   return rootOf(state, task).claim
 }
 
-/** The open tasks from a root down to the deepest one, where depth-first work always happens. */
+/** The open tasks from a root down to the deepest one, where depth-first work always happens */
 export function focusChain(state: State, root: Task): Task[] {
   const child = childrenOf(state, root.id).find(isOpen)
 
@@ -154,7 +154,7 @@ export function focusOf(state: State, root: Task): Task {
   return focusChain(state, root).at(-1)!
 }
 
-/** The tasks a declared root task still waits for. */
+/** The tasks a declared root task still waits for */
 export function waitsFor(state: State, task: Task): string[] {
   return (task.after ?? []).filter(id => requireTask(state, id).state !== 'done')
 }
@@ -176,7 +176,7 @@ function buildSpec(input: SpecInput, globalChecks: GovernorConfig['globalChecks'
   }
 }
 
-/** Replaces the parts of a task's brief that `changes` gives; a new list of criteria is numbered afresh. */
+/** Replaces the parts of a task's brief that `changes` gives; a new list of criteria is numbered afresh */
 export function reviseBrief(state: State, task: Task, changes: Partial<SpecInput>): void {
   const { title = task.title, acceptance, ...brief } = changes
   task.title = title
@@ -187,7 +187,7 @@ export function reviseBrief(state: State, task: Task, changes: Partial<SpecInput
   }
 }
 
-/** Waiting for a root task of the same bookmark means starting from a bookmark that holds its merge. */
+/** Waiting for a root task of the same bookmark means starting from a bookmark that holds its merge */
 export function declareRoot(
   state: State,
   input: SpecInput,
@@ -226,7 +226,7 @@ export function declareRoot(
   return task
 }
 
-/** A subtask is a rabbit hole of its parent: declared by the parent's executor, who dives in at once. */
+/** A subtask is a rabbit hole of its parent: declared by the parent's executor, who dives in at once */
 export function declareChild(
   state: State,
   parentId: string,
@@ -283,7 +283,7 @@ export function beginReview(state: State, id: string, by: string, commit: string
   return task
 }
 
-/** What stops `evidence` from signing `task` off at `commit`; empty when every criterion is covered. */
+/** What stops `evidence` from signing `task` off at `commit`; empty when every criterion is covered */
 function missingEvidence(task: Task, evidence: Record<string, Evidence>, commit: string): string[] {
   return task.spec.acceptance.flatMap(criterion => {
     const item = evidence[criterion.id]
@@ -299,7 +299,7 @@ function missingEvidence(task: Task, evidence: Record<string, Evidence>, commit:
 
 /**
  * Records a reviewer's verdict. A pass needs evidence for every criterion and a reviewer who neither declared nor
- * claimed the task; it finishes a subtask, while a root task then waits for the coordinator's sign-off.
+ * claimed the task; it finishes a subtask, while a root task then waits for the coordinator's sign-off
  */
 export function recordVerdict(state: State, id: string, review: Review): Task {
   const task = requireTask(state, id)
@@ -330,7 +330,7 @@ export function recordVerdict(state: State, id: string, review: Review): Task {
   return task
 }
 
-/** The reviews a task failed since it last passed one, the coordinator's refusals included. */
+/** The reviews a task failed since it last passed one, the coordinator's refusals included */
 export function failedReviewsInARow(task: Task): number {
   return task.reviews.length - 1 - task.reviews.findLastIndex(review => review.verdict === 'pass')
 }
@@ -344,7 +344,7 @@ function awaitingSignOff(state: State, id: string): Task {
   return task
 }
 
-/** The coordinator's sign-off, after which the scheduler merges the task with `commitMessage`. */
+/** The coordinator's sign-off, after which the scheduler merges the task with `commitMessage` */
 export function approve(state: State, id: string, by: string, commitMessage: string, now: number): Task {
   const task = awaitingSignOff(state, id)
   task.approval = { by, commitMessage }
@@ -354,7 +354,7 @@ export function approve(state: State, id: string, by: string, commitMessage: str
   return task
 }
 
-/** The coordinator's refusal to sign off, kept as a failed review of the commit it was shown. */
+/** The coordinator's refusal to sign off, kept as a failed review of the commit it was shown */
 export function sendBack(state: State, id: string, by: string, findings: string, now: number): Task {
   const task = awaitingSignOff(state, id)
   task.reviews.push({ reviewer: by, commit: task.signedCommit!, verdict: 'fail', evidence: {}, findings, at: now })
@@ -363,7 +363,7 @@ export function sendBack(state: State, id: string, by: string, findings: string,
   return reopen(state, id, `sent back by ${by}: ${findings}`, now)
 }
 
-/** `onto` is the bookmark commit the task landed on, where its own changes start. */
+/** `onto` is the bookmark commit the task landed on, where its own changes start */
 export function completeMerge(state: State, id: string, commit: string, onto: string, now: number): Task {
   const task = requireTask(state, id)
   task.state = 'done'
@@ -378,7 +378,7 @@ export function completeMerge(state: State, id: string, commit: string, onto: st
  * Sends a task in review, or waiting for sign-off, back to its executor, such as when its merge conflicts or its review
  * ends unfinished. One waiting for sign-off has no executor left, so a fresh session takes it up. A merge that took in
  * newer work from the bookmark passes `onto`, so later reviews see only the task's own changes. Any other task is left
- * as it is, so a task cancelled meanwhile stays cancelled.
+ * as it is, so a task cancelled meanwhile stays cancelled
  */
 export function reopen(state: State, id: string, reason: string, now: number, onto?: string): Task {
   const task = requireTask(state, id)
@@ -397,7 +397,7 @@ export function reopen(state: State, id: string, reason: string, now: number, on
   return task
 }
 
-/** Cancels a task together with its open subtasks and the declared tasks that wait for it. */
+/** Cancels a task together with its open subtasks and the declared tasks that wait for it */
 export function cancelTask(state: State, id: string, by: string, reason: string, now: number): Task[] {
   const task = requireTask(state, id)
   if (!isOpen(task)) {
@@ -412,7 +412,7 @@ export function cancelTask(state: State, id: string, by: string, reason: string,
     ...childrenOf(state, id)
       .filter(isOpen)
       .flatMap(child => cancelTask(state, child.id, by, `its parent ${id} was cancelled`, now)),
-    // Checked as each one comes up, since cancelling an earlier one can reach it through another task it waits for.
+    // Checked as each one comes up, since cancelling an earlier one can reach it through another task it waits for
     ...dependents.flatMap(dependent =>
       isOpen(dependent) ? cancelTask(state, dependent.id, by, `it waited for ${id}, which was cancelled`, now) : [],
     ),
@@ -445,7 +445,7 @@ export function renderBrief(state: State, task: Task): string {
   ].join('\n')
 }
 
-/** One line per task, children indented under their parent; `annotate` adds live facts such as process state. */
+/** One line per task, children indented under their parent; `annotate` adds live facts such as process state */
 export function renderTree(state: State, annotate: (task: Task) => string): string {
   function lines(task: Task, depth: number): string[] {
     const extra = annotate(task)

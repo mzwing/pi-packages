@@ -25,9 +25,9 @@ const VERDICT_LABELS = [
 
 type Tally = Record<AuthorizerVerdict['kind'], number>
 
-/** One reviewer per applied config, so a config change swaps the registered link without a reload. */
+/** One reviewer per applied config, so a config change swaps the registered link without a reload */
 interface Generation {
-  /** The session's live context: `signal` and `ui` are read when used, not when the generation is made. */
+  /** The session's live context: `signal` and `ui` are read when used, not when the generation is made */
   runtime: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'ui'>
   config: AutoReviewConfig | undefined
   controller: AbortController
@@ -69,7 +69,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
   const circuitBreaker = new DenialCircuitBreaker()
   let generation: Generation | undefined
   let tally: Tally = { allow: 0, deny: 0, defer: 0 }
-  // One process hosts a node per session and subagent, and a link is only read by the node it registered in.
+  // One process hosts a node per session and subagent, and a link is only read by the node it registered in
   let sessionId: string | undefined
   let warnedMissingSessionId = false
 
@@ -89,7 +89,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
       controller,
       authorize: async (details, query, log) => {
         const verdict = await review(details, query, log)
-        // A retired generation answers for a session or config that is gone.
+        // A retired generation answers for a session or config that is gone
         if (generation === created) {
           tally[verdict.kind] += 1
           renderStatus(created)
@@ -103,7 +103,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
     return created
   }
 
-  /** Throws when the service refuses the link, leaving `target` unregistered. */
+  /** Throws when the service refuses the link, leaving `target` unregistered */
   function register(target: Generation, service: PermissionsService): void {
     target.dispose = service.registerAuthorizer(AUTHORIZER_NAME, target.authorize)
     renderStatus(target)
@@ -123,7 +123,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
 
   function applyConfig(result: LoadConfigResult): ActivationResult {
     reportIssues(result.issues)
-    // Commands only run inside a started session.
+    // Commands only run inside a started session
     const current = generation!
     if (result.config === undefined) {
       return { kind: 'failed', message: 'the merged config is invalid; the previous reviewer remains active' }
@@ -131,7 +131,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
     const service = sessionId === undefined ? undefined : getPermissionsService(sessionId)
     if (service === undefined && current.dispose !== undefined) {
       // Without the service the old link cannot be released, and dropping its handle would leave it deciding
-      // under the superseded config for the rest of the session.
+      // under the superseded config for the rest of the session
       return {
         kind: 'failed',
         message: 'pi-permission-system became unavailable while the old reviewer was still registered',
@@ -148,7 +148,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
     try {
       register(candidate, service)
     } catch (error) {
-      // Nothing is registered now, so asks fall through to the human prompt and the next ready retries.
+      // Nothing is registered now, so asks fall through to the human prompt and the next ready retries
       return { kind: 'failed', message: `the new reviewer could not be registered: ${describeError(error)}` }
     }
 
@@ -170,7 +170,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
   })
 
   // Registration happens only here: ready fires after every `session_start` and before any ask, and may
-  // repeat, which the stored dispose handle turns into a no-op.
+  // repeat, which the stored dispose handle turns into a no-op
   pi.events.on(PERMISSIONS_READY_CHANNEL, data => {
     const ready = data as PermissionsReadyEvent
     if (ready.sessionId === null) {

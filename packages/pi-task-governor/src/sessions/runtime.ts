@@ -7,20 +7,20 @@ import { claimedRoot } from '../tasks/task.js'
 
 export type Role = 'coordinator' | 'executor' | 'developer' | 'reviewer'
 
-/** How this session takes part in a governed repository. */
+/** How this session takes part in a governed repository */
 export interface Runtime {
   store: string
   repoRoot: string
   sessionId: string
-  /** Undefined for any other session in the repository, which governance restricts but gives no tools. */
+  /** Undefined for any other session in the repository, which governance restricts but gives no tools */
   role: Role | undefined
-  /** What the environment of the task this session works on changes in every command it runs; empty outside tasks. */
+  /** What the environment of the task this session works on changes in every command it runs; empty outside tasks */
   environment: EnvironmentChanges
 }
 
 /**
  * Roles are rechecked against the store on every call: a lease handed to another session ends this one's, and an
- * executor holds its task only while the store names its pid and the task is open.
+ * executor holds its task only while the store names its pid and the task is open
  */
 export function requireRole(runtime: Runtime | undefined, role: Role): Runtime {
   if (runtime?.role !== role || !stillHolds(runtime, role)) {
@@ -45,12 +45,12 @@ function stillHolds(runtime: Runtime, role: Role): boolean {
   }
 }
 
-/** A lease whose process died passes to whoever coordinates next. */
+/** A lease whose process died passes to whoever coordinates next */
 export function leaseIsFree(state: State, sessionId: string): boolean {
   return state.lease === undefined || state.lease.sessionId === sessionId || !isAlive(state.lease.pid)
 }
 
-/** A TUI session takes back its own lease unless another live process holds it, and takes over one its process handed off. */
+/** A TUI session takes back its own lease unless another live process holds it, and takes over one its process handed off */
 export function resumesLease(state: State, sessionId: string): boolean {
   const lease = state.lease
   if (lease?.pid === process.pid) {

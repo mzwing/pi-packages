@@ -28,7 +28,7 @@ export interface ReviewPrompt {
   userPrompt: string
 }
 
-/** The request is never truncated: a reviewer must not approve an action it saw only in part. */
+/** The request is never truncated: a reviewer must not approve an action it saw only in part */
 export function buildReviewPrompt(
   config: AutoReviewConfig,
   transcript: RenderedTranscript,

@@ -17,7 +17,7 @@ env:
 defaults:
   run:
     # A custom shell string runs a bare `bash {0}`; only the built-in `bash`
-    # shell adds -eo pipefail. Spell it out so a failing command aborts the step.
+    # shell adds -eo pipefail. Spell it out so a failing command aborts the step
     shell: devenv shell -- bash -eo pipefail {0}
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
 
-      # A non-zero exit means upstream moved, a finding rather than a failure, so the code is captured.
+      # A non-zero exit means upstream moved, a finding rather than a failure, so the code is captured
       - name: Check for upstream movement
         id: check
         env:
@@ -76,7 +76,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # One open issue, edited in place, so an unported drift does not collect a weekly comment thread.
+      # One open issue, edited in place, so an unported drift does not collect a weekly comment thread
       - name: Open or refresh the drift issue
         if: steps.check.outputs.drifted != '0'
         env:

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { findLiveSession, listLiveSessions, registerSession, unregisterSession } from '../../src/sessions/registry.js'
 import { useAgentDir } from '../helpers.js'
 
-// Above every platform's pid range, so it can never be a live process.
+// Above every platform's pid range, so it can never be a live process
 const DEAD_PID = 2 ** 31 - 1
 
 function record(id: string, pid = process.pid) {

@@ -90,7 +90,7 @@ export function registerReviewerTools(pi: ExtensionAPI, host: Host): void {
         if (params.verdict === 'fail' && params.findings === undefined) {
           throw new Error('A failed review needs findings the developer can act on.')
         }
-        // A check run is the evidence for its criterion, whatever observation accompanies it.
+        // A check run is the evidence for its criterion, whatever observation accompanies it
         const evidence: Record<string, Evidence> = {
           ...Object.fromEntries(
             (params.observations ?? []).map(observation => [

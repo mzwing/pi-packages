@@ -12,7 +12,7 @@ type Command = Omit<RegisteredCommand, 'name' | 'sourceInfo'>
 describe('/permission-auto-review', () => {
   const workspace = useWorkspace()
 
-  /** Answers the settings menu with `picks` in order, then saves; other dialogs come from `answers` by title. */
+  /** Answers the settings menu with `picks` in order, then saves; other dialogs come from `answers` by title */
   function setup(picks: string[], answers: Record<string, string> = {}, projectTrusted = true) {
     let activeConfig: AutoReviewConfig | undefined = loadConfig(workspace.cwd, projectTrusted).config
     const applyConfig = vi.fn((result: LoadConfigResult) => {

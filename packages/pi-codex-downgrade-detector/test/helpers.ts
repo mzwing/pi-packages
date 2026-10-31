@@ -8,7 +8,7 @@ import codexDowngradeDetector from '../src/index.js'
 
 const PLAIN_THEME: Pick<Theme, 'fg'> = { fg: (_color, text) => text }
 
-/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter. */
+/** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter */
 export function useWorkspace(): { cwd: string } {
   const workspace = { cwd: '' }
   let root = ''

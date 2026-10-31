@@ -33,7 +33,7 @@ export interface RenderedTranscript {
   stats: TranscriptStats
 }
 
-// Persisted session data, so every field is decoded rather than trusted to match the current types.
+// Persisted session data, so every field is decoded rather than trusted to match the current types
 interface ContentBlock {
   type?: unknown
   id?: unknown
@@ -75,7 +75,7 @@ function truncateToCharacters(text: string, maxCharacters: number): string {
   const headLength = Math.floor(available * 0.7)
   const tailLength = available - headLength
 
-  // `slice(-0)` would return the whole string when the budget leaves no tail.
+  // `slice(-0)` would return the whole string when the budget leaves no tail
   return `${text.slice(0, headLength)}${tag}${text.slice(text.length - tailLength)}`
 }
 
@@ -135,7 +135,7 @@ function answerEvidence(answer: UserInteractionAnswer): unknown {
 
 /**
  * Only a completed, non-cancelled answer to a question tool the assistant actually called counts, rebuilt from
- * its structured details so free-form tool text is never promoted to user evidence.
+ * its structured details so free-form tool text is never promoted to user evidence
  */
 function userInteractionText(message: MessageLike, interactionCalls: ReadonlyMap<string, string>): string | undefined {
   const { toolName, toolCallId, details } = message
@@ -250,7 +250,7 @@ function collectEntries(sessionEntries: SessionEntry[]): TranscriptEntry[] {
   })
 }
 
-/** The complete arguments of the assistant tool call that raised an ask, which the ask itself only previews. */
+/** The complete arguments of the assistant tool call that raised an ask, which the ask itself only previews */
 export function findToolCallInput(sessionEntries: SessionEntry[], toolCallId: string | undefined): unknown {
   if (toolCallId === undefined) {
     return undefined
@@ -274,7 +274,7 @@ function pool(entry: TranscriptEntry): 'message' | 'tool' {
   return entry.kind === 'tool' ? 'tool' : 'message'
 }
 
-/** Truncates after JSON escaping, which can multiply the rendered length, so the cap holds on the wire. */
+/** Truncates after JSON escaping, which can multiply the rendered length, so the cap holds on the wire */
 function pretruncate(entry: TranscriptEntry): TranscriptEntry {
   const maxCharacters = ENTRY_TOKENS[pool(entry)] * 4
   if (renderEntry(entry).length <= maxCharacters) {
@@ -304,7 +304,7 @@ function isTrusted(entry: TranscriptEntry): boolean {
 
 /**
  * Keeps the first and latest trusted records unconditionally, then other trusted records newest first, then the
- * newest untrusted ones; the untrusted cap never evicts an authorization that was already selected.
+ * newest untrusted ones; the untrusted cap never evicts an authorization that was already selected
  */
 export function renderTranscript(sessionEntries: SessionEntry[]): RenderedTranscript {
   const all = collectEntries(sessionEntries).map(pretruncate)

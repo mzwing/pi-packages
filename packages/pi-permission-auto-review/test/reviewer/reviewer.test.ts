@@ -109,7 +109,7 @@ function createHarness(options: HarnessOptions = {}) {
     streamSimple,
     callTimes,
     start,
-    /** Runs the retry delays and the review timeout on the fake clock. */
+    /** Runs the retry delays and the review timeout on the fake clock */
     async authorize(requestId = 'request-1', details: Partial<PromptPermissionDetails> = {}) {
       const { verdict, entries } = start(requestId, details)
       await vi.runAllTimersAsync()
@@ -136,7 +136,7 @@ describe('permission reviewer', () => {
     expect(verdict).toEqual({ kind: 'allow' })
     expect(context).not.toHaveProperty('tools')
     // Retries stay inside the review's own budget, reasoning is not starved by an output cap, and the review keeps a
-    // session key apart from the main conversation's.
+    // session key apart from the main conversation's
     expect(options).toMatchObject({ maxRetries: 0, sessionId: 'auto-review:session-1' })
     expect(options).not.toHaveProperty('maxTokens')
     expect(entries[0]?.[1]).toMatchObject({
@@ -198,10 +198,10 @@ describe('permission reviewer', () => {
       replies: [reply('not json'), reply('not json'), reply('not json')],
     }).authorize()
     expect(malformed.verdict).toEqual({ kind: 'defer' })
-    // Every reply is paid for, including the ones that were retried.
+    // Every reply is paid for, including the ones that were retried
     expect(malformed.entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response', inputTokens: 300 })
 
-    // Request-time authentication fails inside the registry stream, so an unusable login arrives here too.
+    // Request-time authentication fails inside the registry stream, so an unusable login arrives here too
     const failing = createHarness({ replies: [new Error('no login'), new Error('no login'), new Error('no login')] })
     const exhausted = await failing.authorize()
     expect(exhausted.verdict).toEqual({ kind: 'defer' })
@@ -209,7 +209,7 @@ describe('permission reviewer', () => {
     expect(failing.streamSimple).toHaveBeenCalledTimes(3)
   })
 
-  // The authorizer chain does not isolate a link that throws.
+  // The authorizer chain does not isolate a link that throws
   it('defers rather than throw when the reviewer provider is missing or its lookup throws', async () => {
     const missing = await createHarness({ getProvider: () => undefined }).authorize()
     const throwing = await createHarness({

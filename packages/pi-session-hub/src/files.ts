@@ -13,7 +13,7 @@ export function hubPath(...segments: string[]): string {
   return join(getAgentDir(), EXTENSION_ID, ...segments)
 }
 
-/** The rename is atomic, so a reader never sees half a file. */
+/** The rename is atomic, so a reader never sees half a file */
 export function writeJsonAtomic(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true })
   const temporary = `${path}.${process.pid}.tmp`
@@ -21,7 +21,7 @@ export function writeJsonAtomic(path: string, value: unknown): void {
   renameSync(temporary, path)
 }
 
-/** `undefined` when the file is gone: its writer may remove it between a listing and the read. */
+/** `undefined` when the file is gone: its writer may remove it between a listing and the read */
 export function readJson<T>(path: string): T | undefined {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T

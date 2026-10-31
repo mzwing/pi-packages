@@ -13,7 +13,7 @@ import { nonBlank, textResult } from '../tooling.js'
 import { handoffDuePrompt, nudgePrompt } from './prompts.js'
 
 const MAX_NUDGES = 3
-// A session that ran none of these has moved nothing on, so it has nothing to hand over.
+// A session that ran none of these has moved nothing on, so it has nothing to hand over
 const WORK_TOOLS = new Set(['task_develop', 'task_review', 'task_subtask'])
 const NOTE = Type.String({
   pattern: '\\S',
@@ -21,7 +21,7 @@ const NOTE = Type.String({
   description: 'What is done, what remains, and the decisions taken with their reasons',
 })
 
-/** Mail reaches the coordinator even while it is not running; it reads it when it resumes. */
+/** Mail reaches the coordinator even while it is not running; it reads it when it resumes */
 async function tellCoordinator(runtime: Runtime, rootId: string, body: string, wake: boolean): Promise<void> {
   const { lease } = readState(runtime.store)
   if (lease !== undefined) {
@@ -31,7 +31,7 @@ async function tellCoordinator(runtime: Runtime, rootId: string, body: string, w
 
 /**
  * The task this executor session still works on; undefined once its run is meant to end, after it asked the
- * coordinator, handed off, or passed its review, and when the task was cancelled.
+ * coordinator, handed off, or passed its review, and when the task was cancelled
  */
 function workingRoot(state: State, sessionId: string): Task | undefined {
   const root = claimedRoot(state, sessionId)
@@ -42,7 +42,7 @@ function workingRoot(state: State, sessionId: string): Task | undefined {
   return focusOf(state, root).state === 'claimed' ? root : undefined
 }
 
-/** Leaves the task to the coordinator: this run ends, and a fresh session continues with its answer. */
+/** Leaves the task to the coordinator: this run ends, and a fresh session continues with its answer */
 export async function askCoordinator(runtime: Runtime, question: string): Promise<void> {
   const rootId = updateState(runtime.store, state => {
     const root = claimedRoot(state, runtime.sessionId)!
@@ -59,7 +59,7 @@ export async function askCoordinator(runtime: Runtime, question: string): Promis
   )
 }
 
-/** Has the scheduler start a fresh executor session once this one ends. */
+/** Has the scheduler start a fresh executor session once this one ends */
 function handOff(state: State, root: Task, sessionId: string, how: string, note?: string): void {
   if (note !== undefined) {
     focusOf(state, root).note = note
@@ -169,9 +169,9 @@ export function registerExecutor(pi: ExtensionAPI, host: Host): void {
         ],
       }
     }
-    // Once: the turn that ends an aborted run comes after it.
+    // Once: the turn that ends an aborted run comes after it
     if (turns === maxTurns) {
-      // One that did no work ends like a session that gave up.
+      // One that did no work ends like a session that gave up
       if (worked) {
         updateState(runtime.store, current => {
           const root = workingRoot(current, runtime.sessionId)
@@ -187,7 +187,7 @@ export function registerExecutor(pi: ExtensionAPI, host: Host): void {
   })
 
   // A run that ends with its task still open is sent back to work a few times; then it ends, and the scheduler
-  // replaces the session.
+  // replaces the session
   pi.on('agent_before_settle', (event): AgentBeforeSettleEventResult | undefined => {
     const runtime = host.runtime()
     if (runtime?.role !== 'executor' || event.outcome !== 'completed' || nudges === MAX_NUDGES) {
@@ -216,7 +216,7 @@ export function registerExecutor(pi: ExtensionAPI, host: Host): void {
 
 /**
  * Tells the coordinator, whose scheduler wakes on executor mail, that this executor is gone. The mail arrives before
- * the process ends, so the claim is cleared first for the scheduler to find it gone.
+ * the process ends, so the claim is cleared first for the scheduler to find it gone
  */
 export async function announceExit(runtime: Runtime): Promise<void> {
   const root = updateState(runtime.store, state => {

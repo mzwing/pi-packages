@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../../src/config/config.js'
 import { resolveReviewModel } from '../../src/reviewer/model.js'
 
-// `codex-auto-review` never appears in Pi's registry.
+// `codex-auto-review` never appears in Pi's registry
 it('derives the hidden reviewer model from another Codex model, for the Codex provider only', () => {
   const template = {
     id: 'gpt-5.6-terra',

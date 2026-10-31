@@ -3,9 +3,9 @@ import type { Role } from '../sessions/runtime.js'
 import type { Evidence, State, Task } from '../tasks/task.js'
 import { focusChain, focusOf, renderBrief, requireTask } from '../tasks/task.js'
 
-// Enough history for a session taking over to see why the task came back to it; task_show has the rest.
+// Enough history for a session taking over to see why the task came back to it; task_show has the rest
 const RECENT_EVENTS = 6
-// A longer diff reaches the coordinator as the command that shows it.
+// A longer diff reaches the coordinator as the command that shows it
 const SIGN_OFF_DIFF_LINES = 300
 
 const ROLE_SECTIONS: Record<Role, string> = {
@@ -52,7 +52,7 @@ const ROLE_SECTIONS: Record<Role, string> = {
   ].join('\n'),
 }
 
-/** A role's part of the system prompt: its built-in instructions, then any the config adds. */
+/** A role's part of the system prompt: its built-in instructions, then any the config adds */
 export function roleSection(role: Role, config: GovernorConfig): string {
   const added = config.roles[role].instructions
 
@@ -63,7 +63,7 @@ export function roleSection(role: Role, config: GovernorConfig): string {
 
 /**
  * What starts an executor session. A session taking over gets where the work stands from the store, never a summary
- * its predecessor wrote, apart from the notes kept on the open tasks.
+ * its predecessor wrote, apart from the notes kept on the open tasks
  */
 export function executorPrompt(state: State, root: Task, predecessor: string | undefined): string {
   if (predecessor === undefined) {
@@ -114,7 +114,7 @@ function describeEvidence(evidence: Evidence): string {
 
 /**
  * What the coordinator signs a reviewed root task off from: its change, its reviewer's evidence and its note, the
- * other tasks that change files it changes, and the tasks that start once it merges.
+ * other tasks that change files it changes, and the tasks that start once it merges
  */
 export function signOffRequest(
   state: State,

@@ -4,14 +4,14 @@ import { compareVersions } from './identity.js'
 
 export type FindingLevel = 'ok' | 'info' | 'warn' | 'critical'
 
-/** `lateral` means a different model, with nothing to order the two. */
+/** `lateral` means a different model, with nothing to order the two */
 export type Direction = 'lower' | 'higher' | 'lateral'
 
 export interface Finding {
   level: FindingLevel
   code: string
   direction?: Direction | undefined
-  /** Shown after the slugs, only where the two slugs cannot say it. */
+  /** Shown after the slugs, only where the two slugs cannot say it */
   note?: string | undefined
 }
 
@@ -26,7 +26,7 @@ export interface Verdict {
 const LEVEL_RANK: Record<FindingLevel, number> = { ok: 0, info: 0, warn: 1, critical: 2 }
 
 function substitution(difference: number, note?: string): Finding {
-  // An upgrade still is not what you selected, but being handed something cheaper is the failure worth stopping for.
+  // An upgrade still is not what you selected, but being handed something cheaper is the failure worth stopping for
   return difference < 0
     ? { level: 'critical', code: 'MODEL_SUBSTITUTED', direction: 'lower', note }
     : { level: 'warn', code: 'MODEL_SUBSTITUTED', direction: 'higher', note }
@@ -101,12 +101,12 @@ function judgeSafetyBuffering({
     return undefined
   }
   const served = servedModel?.trim().toLowerCase()
-  // A fallback naming your own model substitutes nothing, so it only counts as fired when it displaced that model.
+  // A fallback naming your own model substitutes nothing, so it only counts as fired when it displaced that model
   if (served === fasterFallbackModel.trim().toLowerCase() && served !== requestedModel.trim().toLowerCase()) {
     return { level: 'critical', code: 'SAFETY_BUFFERING_APPLIED', note: 'safety buffering' }
   }
 
-  // `x-codex-safety-buffering-enabled: false` does not disable the fallback upstream, so only the faster model counts.
+  // `x-codex-safety-buffering-enabled: false` does not disable the fallback upstream, so only the faster model counts
   return { level: 'warn', code: 'SAFETY_BUFFERING_ARMED', note: `fallback armed: ${fasterFallbackModel}` }
 }
 
@@ -116,7 +116,7 @@ export function judgeTurn(turn: TurnObservation, identify: IdentifyModel): Verdi
   const model = judgeModel(requested, served)
   const findings = [model, judgeSafetyBuffering(turn)]
 
-  // Anthropic message ids start with `msg_01`; a relay that swaps the upstream rarely rewrites the id.
+  // Anthropic message ids start with `msg_01`; a relay that swaps the upstream rarely rewrites the id
   if (requested.vendor === 'openai' && turn.responseId?.trim().startsWith('msg_01')) {
     findings.push({ level: 'critical', code: 'BACKEND_FAMILY_MISMATCH', note: 'Anthropic-shaped response id' })
   }

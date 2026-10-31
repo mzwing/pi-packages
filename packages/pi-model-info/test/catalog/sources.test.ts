@@ -7,13 +7,13 @@ function modelsDev(fields: Record<string, unknown>) {
 }
 
 describe('models.dev', () => {
-  // Defaulting to ['text'] would strip image support Pi already knew about.
+  // Defaulting to ['text'] would strip image support Pi already knew about
   it('keeps only the modalities Pi can express, and leaves input unknown when none are declared', () => {
     expect(modelsDev({ modalities: { input: ['image', 'pdf', 'audio'] } })?.input).toEqual(['text', 'image'])
     expect(modelsDev({})?.input).toBeUndefined()
   })
 
-  // Only the `effort` form names levels Pi can send; inventing one is a 400 on every turn.
+  // Only the `effort` form names levels Pi can send; inventing one is a 400 on every turn
   it('maps only effort options, spelling none as off and omitting the levels a model does not accept', () => {
     expect(modelsDev({ reasoning_options: [{ type: 'effort', values: ['none', 'high'] }] })?.thinkingLevelMap).toEqual({
       off: 'none',

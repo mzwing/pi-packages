@@ -12,7 +12,7 @@ interface CompletionItem {
   description: string
 }
 
-/** How current each provider's list stays, the one thing the counts cannot tell. */
+/** How current each provider's list stays, the one thing the counts cannot tell */
 const STRATEGY_NOTE: Record<ProviderStrategy, string> = {
   native: 'list re-read live',
   decorate: 'list re-read on refresh',
@@ -82,7 +82,7 @@ function diverges(effective: SnapshotModel, report: ModelReport): boolean {
   )
 }
 
-/** `find` reads the model as Pi finally sees it, after models.json `modelOverrides`. */
+/** `find` reads the model as Pi finally sees it, after models.json `modelOverrides` */
 export function formatDetail(
   reports: ProviderReport[],
   reference: string,
@@ -135,7 +135,7 @@ export function formatDetail(
     `cost:       $${model.model.cost.input}/$${model.model.cost.output} per Mtok${source('cost')}`,
   )
 
-  // models.json `modelOverrides` are layered above this extension, so its result is not always what Pi uses.
+  // models.json `modelOverrides` are layered above this extension, so its result is not always what Pi uses
   const effective = find(report.provider, model.id)
   if (effective !== undefined && diverges(effective, model)) {
     lines.push(
@@ -159,7 +159,7 @@ export function formatDetail(
   return lines.join('\n')
 }
 
-/** Runs on every keystroke, so it only filters what the reports already hold. */
+/** Runs on every keystroke, so it only filters what the reports already hold */
 export function buildCompletions(reports: ProviderReport[], prefix: string): CompletionItem[] | null {
   const needle = prefix.trim().toLowerCase()
   const items: CompletionItem[] = []

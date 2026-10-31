@@ -187,7 +187,7 @@ function formatValue(field: ConfigField, value: unknown): string {
   return EDITORS[field].format?.(value) ?? String(value)
 }
 
-/** Layer precedence without the schema, which rejects a draft that still breaks the cross-field rule. */
+/** Layer precedence without the schema, which rejects a draft that still breaks the cross-field rule */
 function effectiveConfig(layers: Layers): AutoReviewConfig {
   const effective = { ...DEFAULT_CONFIG }
   for (const field of FIELDS) {

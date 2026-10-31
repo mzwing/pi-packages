@@ -13,7 +13,7 @@ const ENV_PROVIDERS = ['auto', 'direnv', 'flake', 'none'] as const
 
 const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
 const maxExecutorsSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1))
-// At its limit a coordinator is reminded to hand off, an executor hands off, and a developer or reviewer must finish.
+// At its limit a coordinator is reminded to hand off, an executor hands off, and a developer or reviewer must finish
 const turnsSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(2))
 
 const coordinatorSchema = v.strictObject({
@@ -86,7 +86,7 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 export type EnvProvider = (typeof ENV_PROVIDERS)[number]
 
 interface CoordinatorConfig {
-  /** Added to the role's built-in instructions in its system prompt. */
+  /** Added to the role's built-in instructions in its system prompt */
   instructions?: string | undefined
   maxTurns: number
 }
@@ -96,10 +96,10 @@ interface RoleConfig extends CoordinatorConfig {
   thinking?: ThinkingLevel | undefined
 }
 
-// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step.
+// `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step
 export interface GovernorConfig {
   $schema?: string | undefined
-  /** Where task workspaces go; defaults to `<repo>.tasks` beside the repository. */
+  /** Where task workspaces go; defaults to `<repo>.tasks` beside the repository */
   workspaceRoot?: string | undefined
   maxExecutors: number
   defaultBookmark: string
@@ -120,7 +120,7 @@ export interface LoadedConfig {
   issues: string[]
 }
 
-// Not imported from tooling.ts: scripts/generate-schema.ts runs this file under Node, which cannot resolve `.js` imports of sources.
+// Not imported from tooling.ts: scripts/generate-schema.ts runs this file under Node, which cannot resolve `.js` imports of sources
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -165,7 +165,7 @@ export function configPaths(repoRoot: string): { global: string; project: string
 
 /**
  * Project fields override global ones, role by role. An untrusted project's file is left unread, and an unusable
- * scope leaves the defaults in force rather than half a config.
+ * scope leaves the defaults in force rather than half a config
  */
 export function loadConfig(repoRoot: string, projectTrusted: boolean): LoadedConfig {
   const paths = configPaths(repoRoot)

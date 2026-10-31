@@ -17,13 +17,13 @@ import { parseReviewAssessment } from './verdict.js'
 
 const FIRST_RETRY_DELAY_MS = 250
 const MAX_RETRY_DELAY_MS = 30_000
-/** Room left for reasoning and the verdict when a prompt is admitted; pi-ai keeps its own margin on top. */
+/** Room left for reasoning and the verdict when a prompt is admitted; pi-ai keeps its own margin on top */
 const OUTPUT_RESERVE_TOKENS = 16_384
 const DECISION_EVENT = 'auto_review.decision'
 // Upstream keys its reviewer as `guardian:{parent}` too: sharing the main session's key would let every review
-// replace the main conversation's Codex WebSocket continuation.
+// replace the main conversation's Codex WebSocket continuation
 const SESSION_KEY_PREFIX = 'auto-review:'
-// Verbatim `REJECTION_INSTRUCTIONS` from openai/codex `codex-rs/prompts/src/model_messages/guardian.rs`.
+// Verbatim `REJECTION_INSTRUCTIONS` from openai/codex `codex-rs/prompts/src/model_messages/guardian.rs`
 const REJECTION_INSTRUCTIONS =
   'The agent must not attempt to achieve the same outcome via workaround, indirect execution, or policy circumvention. Proceed only with a materially safer alternative, or if the user explicitly approves the action after being informed of the risk. Otherwise, stop and request user input'
 
@@ -40,10 +40,10 @@ type FailureCategory =
 
 export interface ReviewerRuntime {
   config: AutoReviewConfig
-  /** Read at every review, since `signal` belongs to the turn in progress. */
+  /** Read at every review, since `signal` belongs to the turn in progress */
   context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal'>
   circuitBreaker: DenialCircuitBreaker
-  /** Aborted when the reviewer is replaced or the session ends. */
+  /** Aborted when the reviewer is replaced or the session ends */
   sessionSignal: AbortSignal
 }
 
@@ -67,7 +67,7 @@ function abortError(): Error {
   return error
 }
 
-/** Resolves early on abort; the caller checks the signal. */
+/** Resolves early on abort; the caller checks the signal */
 async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>()
   const onAbort = (): void => resolve()
@@ -78,7 +78,7 @@ async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   signal.removeEventListener('abort', onAbort)
 }
 
-/** A provider is not bound to honour the abort signal promptly, so the timeout is enforced here. */
+/** A provider is not bound to honour the abort signal promptly, so the timeout is enforced here */
 async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
     throw abortError()
@@ -148,7 +148,7 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
       const attemptSignal = AbortSignal.any([reviewSignal, attemptController.signal])
       let category: FailureCategory = 'provider-error'
       try {
-        // The registry resolves the provider's authentication per request, so an unusable login lands here.
+        // The registry resolves the provider's authentication per request, so an unusable login lands here
         const stream = context.modelRegistry.streamSimple(
           model,
           {
@@ -159,7 +159,7 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
             maxRetries: 0,
             signal: attemptSignal,
             timeoutMs: Math.max(1, Math.min(attemptTimeoutMs, deadline - Date.now())),
-            // Gateways such as opencode-go also reject requests without a session id.
+            // Gateways such as opencode-go also reject requests without a session id
             sessionId: `${SESSION_KEY_PREFIX}${context.sessionManager.getSessionId()}`,
             ...(model.reasoning && config.reasoning !== 'off' ? { reasoning: config.reasoning } : {}),
           },
@@ -245,7 +245,7 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): Authorizer['
       const result = await runReview(runtime, details)
       const durationMs = Math.max(0, Date.now() - startedAt)
       if ('failure' in result) {
-        // Deferring would open the human prompt the user just escaped, and Pi drops an interrupted call's verdict anyway.
+        // Deferring would open the human prompt the user just escaped, and Pi drops an interrupted call's verdict anyway
         const verdict: AuthorizerVerdict =
           result.failure === 'cancelled'
             ? { kind: 'deny', reason: 'The automatic review was cancelled before it finished' }
@@ -275,13 +275,13 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): Authorizer['
 
       circuitBreaker.recordDenied()
       // The host already prefixes its own attribution sentence, so this carries the why, the two grades and upstream's
-      // instruction against working around the denial.
+      // instruction against working around the denial
       return {
         kind: 'deny',
         reason: `${assessment.rationale} (risk: ${assessment.riskLevel}, user authorization: ${assessment.userAuthorization}). ${REJECTION_INSTRUCTIONS}`,
       }
     } catch {
-      // The chain does not isolate a link that throws, so every internal failure has to leave as a verdict.
+      // The chain does not isolate a link that throws, so every internal failure has to leave as a verdict
       circuitBreaker.recordNonDenial()
       logFailure(log, config, details, { failure: 'internal-error' }, 'defer', Math.max(0, Date.now() - startedAt))
 

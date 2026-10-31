@@ -41,7 +41,7 @@ describe('model ladder', () => {
     expect(codes(judge({ servedModel: 'claude-opus-5' }))).toContain('VENDOR_MISMATCH')
   })
 
-  // Being handed something cheaper is the failure worth stopping for; an upgrade still is not what you picked.
+  // Being handed something cheaper is the failure worth stopping for; an upgrade still is not what you picked
   it('rates a downgrade critical and an upgrade a warning, both as substitutions', () => {
     const down = judge({ servedModel: 'gpt-5.6-luna' })
     const up = judge({ requestedModel: 'gpt-5.4', servedModel: 'gpt-6-astra' })

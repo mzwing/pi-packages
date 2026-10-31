@@ -1,7 +1,7 @@
 import type { CatalogEntry, CatalogIndex, NormalizedSource } from '../types.js'
 import { bareId } from './sources.js'
 
-/** NUL cannot appear in a provider or model id, so the composite key is unambiguous. */
+/** NUL cannot appear in a provider or model id, so the composite key is unambiguous */
 const SCOPE_SEPARATOR = String.fromCharCode(0)
 
 export function scopedKey(provider: string, id: string): string {
@@ -17,7 +17,7 @@ function push(map: Map<string, CatalogEntry[]>, key: string, entry: CatalogEntry
   }
 }
 
-/** `sources` must come in priority order, so every bucket is ranked and the resolver never sorts by source. */
+/** `sources` must come in priority order, so every bucket is ranked and the resolver never sorts by source */
 export function buildCatalogIndex(sources: NormalizedSource[]): CatalogIndex {
   const index: CatalogIndex = { scoped: new Map(), exact: new Map(), bare: new Map(), vendors: new Map() }
 

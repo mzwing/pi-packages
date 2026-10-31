@@ -11,7 +11,7 @@ const CONFIG_SCHEMA_URL =
 
 const FREE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
-/** Suffix variants every relay uses; each can be disabled with `enabled: false`. */
+/** Suffix variants every relay uses; each can be disabled with `enabled: false` */
 const BUILTIN_RULES: AffixRule[] = [
   { id: 'free-dash', kind: 'suffix', value: '-free', override: { cost: FREE_COST } },
   { id: 'free-colon', kind: 'suffix', value: ':free', override: { cost: FREE_COST } },
@@ -21,7 +21,7 @@ const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))
 const nonNegativeSchema = v.pipe(v.number(), v.minValue(0))
 const positiveIntegerSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1))
 
-// Spelled out rather than derived from THINKING_LEVELS, so the inferred type is the exact map shape.
+// Spelled out rather than derived from THINKING_LEVELS, so the inferred type is the exact map shape
 const thinkingValue = v.optional(v.nullable(v.string()))
 const thinkingLevelMapSchema = v.strictObject({
   off: thinkingValue,
@@ -57,7 +57,7 @@ const metadataOverrideSchema = v.strictObject({
   contextWindow: v.optional(positiveIntegerSchema),
   maxTokens: v.optional(positiveIntegerSchema),
   thinkingLevelMap: v.optional(thinkingLevelMapSchema),
-  // Pi validates its api-keyed `compat` union on registration; duplicating it here would only go stale.
+  // Pi validates its api-keyed `compat` union on registration; duplicating it here would only go stale
   compat: v.optional(
     v.custom<ModelCompat>(
       value => typeof value === 'object' && value !== null && !Array.isArray(value),
@@ -133,12 +133,12 @@ const fileSchema = v.strictObject({
 })
 
 export interface LoadedConfig {
-  /** `undefined` when either scope is unusable, which leaves the extension inert. */
+  /** `undefined` when either scope is unusable, which leaves the extension inert */
   config: ResolvedConfig | undefined
   issues: string[]
 }
 
-// Not imported from util.ts: scripts/generate-schema.ts runs this file under Node, which cannot resolve `.js` imports of sources.
+// Not imported from util.ts: scripts/generate-schema.ts runs this file under Node, which cannot resolve `.js` imports of sources
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -182,7 +182,7 @@ function orderRules(rules: AffixRule[]): AffixRule[] {
     .map(entry => entry.rule)
 }
 
-/** Folds the flat sugar into per-provider gates; an unusable entry is reported and dropped, the rest still applies. */
+/** Folds the flat sugar into per-provider gates; an unusable entry is reported and dropped, the rest still applies */
 function resolve(config: v.InferOutput<typeof fileSchema>, issue: (message: string) => void): ResolvedConfig {
   const providers = new Map<string, ResolvedProvider>()
   for (const [id, optIn] of Object.entries(config.providers ?? {})) {
@@ -209,7 +209,7 @@ function resolve(config: v.InferOutput<typeof fileSchema>, issue: (message: stri
     ]),
   ]
   for (const [section, key, gate] of flatGates) {
-    // Model ids routinely contain `/`, so a key is only unambiguous split at the first one into a known provider.
+    // Model ids routinely contain `/`, so a key is only unambiguous split at the first one into a known provider
     const separator = key.indexOf('/')
     const provider = separator > 0 && separator < key.length - 1 ? providers.get(key.slice(0, separator)) : undefined
     if (provider === undefined) {
@@ -276,7 +276,7 @@ export function buildJsonSchema(): Record<string, unknown> {
     target: 'draft-2020-12',
     typeMode: 'input',
     ignoreActions: ['trim', 'check_items'],
-    // `compat` is the one custom node; left unconstrained rather than copying Pi's version-specific union.
+    // `compat` is the one custom node; left unconstrained rather than copying Pi's version-specific union
     overrideSchema: ({ valibotSchema }) => (valibotSchema.type === 'custom' ? {} : undefined),
   })
 

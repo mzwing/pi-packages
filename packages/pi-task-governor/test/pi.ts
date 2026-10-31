@@ -12,7 +12,7 @@ export interface SessionOptions {
   cwd: string
   sessionId: string
   mode?: string
-  /** Value of the --governor-store flag, as an executor is started with. */
+  /** Value of the --governor-store flag, as an executor is started with */
   store?: string
 }
 
@@ -29,7 +29,7 @@ export interface Governor {
   tool: (name: string, params: object) => Promise<AgentToolResult<unknown>>
 }
 
-/** The governor loaded into a fake Pi session, with what it shows and sends recorded. */
+/** The governor loaded into a fake Pi session, with what it shows and sends recorded */
 export function loadGovernor(options: SessionOptions): Governor {
   const handlers = new Map<string, Handler[]>()
   const eventHandlers = new Map<string, Handler[]>()

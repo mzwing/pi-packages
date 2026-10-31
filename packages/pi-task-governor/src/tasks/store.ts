@@ -7,7 +7,7 @@ import process from 'node:process'
 import { isAlive } from '@mzwing/pi-session-hub/api'
 import { emptyState } from './task.js'
 
-// A holder keeps the lock for one synchronous read-modify-write, so an older lock was left by a crash.
+// A holder keeps the lock for one synchronous read-modify-write, so an older lock was left by a crash
 const LOCK_STALE_MS = 10_000
 const LOCK_RETRY_MS = 20
 
@@ -16,7 +16,7 @@ interface LockOwner {
   at: number
 }
 
-/** The main workspace holds the repo in `.jj/repo`; other workspaces only have a file there pointing at it. */
+/** The main workspace holds the repo in `.jj/repo`; other workspaces only have a file there pointing at it */
 export function findRepoRoot(cwd: string): string | undefined {
   for (let directory = cwd; ; directory = dirname(directory)) {
     if (statSync(join(directory, '.jj', 'repo'), { throwIfNoEntry: false })?.isDirectory() === true) {
@@ -50,7 +50,7 @@ export function readState(store: string): State {
   return JSON.parse(readFileSync(statePath(store), 'utf8')) as State
 }
 
-/** `undefined` once the lock is released; the owner file is in place before the lock appears. */
+/** `undefined` once the lock is released; the owner file is in place before the lock appears */
 function readOwner(lock: string): LockOwner | undefined {
   try {
     return JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')) as LockOwner
@@ -66,7 +66,7 @@ function sleepSync(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds)
 }
 
-/** A directory renamed into place carries its owner atomically, which a bare mkdir followed by a write would not. */
+/** A directory renamed into place carries its owner atomically, which a bare mkdir followed by a write would not */
 function acquireLock(store: string): string {
   const lock = join(store, 'lock')
   for (;;) {
@@ -101,7 +101,7 @@ function withLock<T>(store: string, action: () => T): T {
   }
 }
 
-/** Runs `change` on the current state under the cross-process lock and saves the result; a throw saves nothing. */
+/** Runs `change` on the current state under the cross-process lock and saves the result; a throw saves nothing */
 export function updateState<T>(store: string, change: (state: State) => T): T {
   return withLock(store, () => {
     const state = readState(store)

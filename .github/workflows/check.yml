@@ -13,7 +13,7 @@ permissions:
 defaults:
   run:
     # A custom shell string runs a bare `bash {0}`; only the built-in `bash`
-    # shell adds -eo pipefail. Spell it out so a failing command aborts the step.
+    # shell adds -eo pipefail. Spell it out so a failing command aborts the step
     shell: devenv shell -- bash -eo pipefail {0}
 
 jobs:
@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
 
-      # pi-task-governor type-checks against the build of pi-session-hub.
+      # pi-task-governor type-checks against the build of pi-session-hub
       - name: Build
         run: pnpm run build
 

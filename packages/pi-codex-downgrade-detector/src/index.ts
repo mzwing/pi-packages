@@ -18,7 +18,7 @@ import {
 const COMMAND_NAME = 'codex-downgrade'
 const HISTORY_LIMIT = 50
 
-/** A `null` entry marks the level unsupported: Pi substitutes one of its own, so there is nothing to compare. */
+/** A `null` entry marks the level unsupported: Pi substitutes one of its own, so there is nothing to compare */
 function expectedEffort(registry: ModelRegistry, message: AssistantMessage): string | undefined {
   if (message.thinkingLevel === undefined) {
     return undefined
@@ -54,7 +54,7 @@ export default function codexDowngradeDetector(pi: ExtensionAPI): void {
       console.warn(`[${EXTENSION_ID}] config issue at ${issue}`)
     }
     config = loaded.config
-    // Slugs the provider can actually offer, so a relay-added model is not called a stranger.
+    // Slugs the provider can actually offer, so a relay-added model is not called a stranger
     const offered = ctx.modelRegistry
       .getAll()
       .filter(model => watches(model.provider))
@@ -78,7 +78,7 @@ export default function codexDowngradeDetector(pi: ExtensionAPI): void {
     const sentEffort = pendingEffort
     pendingHeaders = undefined
     pendingEffort = undefined
-    // A turn a virtual model failed to route never reached a provider.
+    // A turn a virtual model failed to route never reached a provider
     if (message.role !== 'assistant' || message.api === 'pi-virtual' || !watches(message.provider)) {
       return
     }

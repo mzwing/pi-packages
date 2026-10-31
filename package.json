@@ -34,5 +34,5 @@
     ],
     "*.{css,graphql,gql,html,json,json5,jsonc,less,md,mdx,scss,svelte,toml,yaml,yml}": "oxfmt --write"
   },
-  "packageManager": "pnpm@12.14.0"
+  "packageManager": "pnpm@12.17.0"
 }

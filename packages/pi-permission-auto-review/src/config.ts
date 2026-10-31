@@ -4,7 +4,6 @@ export const EXTENSION_ID = 'pi-permission-auto-review'
 export const DEFAULT_PROVIDER = 'openai-codex'
 export const DEFAULT_MODEL = 'codex-auto-review'
 const MAX_TIMEOUT_MS = 300_000
-export const DEFAULT_MAX_RETRIES = 2
 export const CONFIG_SCHEMA_URL =
   'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-permission-auto-review/schemas/config.schema.json'
 
@@ -31,7 +30,7 @@ const configSchema = fileSchema
     model: z.string().trim().min(1).default(DEFAULT_MODEL),
     reasoning: z.enum(REASONING_LEVELS).default('low'),
     timeoutMs: timeoutSchema.default(90_000),
-    maxRetries: maxRetriesSchema.default(DEFAULT_MAX_RETRIES),
+    maxRetries: maxRetriesSchema.default(2),
     includeBaselinePolicy: z.boolean().default(true),
   })
   .superRefine((config, context) => {
@@ -51,9 +50,7 @@ export interface AutoReviewConfig {
   model: string
   reasoning: (typeof REASONING_LEVELS)[number]
   timeoutMs: number
-  /** Retries after the first call. Defaults to 2 when omitted. */
-  maxRetries?: number | undefined
-  /** Caps each provider call from start to finish, not its idle time; unset, a call gets the rest of `timeoutMs`. */
+  maxRetries: number
   attemptTimeoutMs?: number | undefined
   includeBaselinePolicy: boolean
   additionalPolicy?: string | undefined

@@ -9,7 +9,6 @@ import type {
   AuthorizerVerdict,
   PromptPermissionDetails,
 } from '@gotgenes/pi-permission-system'
-import { DEFAULT_MAX_RETRIES } from './config.js'
 import { resolveReviewModel } from './model.js'
 import { POLICY_REVISION } from './policy.js'
 import { buildReviewPrompt } from './prompt.js'
@@ -79,10 +78,6 @@ async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
   signal.removeEventListener('abort', onAbort)
 }
 
-function retryDelay(retryIndex: number): number {
-  return Math.min(MAX_RETRY_DELAY_MS, FIRST_RETRY_DELAY_MS * 4 ** retryIndex)
-}
-
 /** A provider is not bound to honour the abort signal promptly, so the timeout is enforced here. */
 async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
@@ -107,7 +102,7 @@ async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Prom
 
 async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDetails): Promise<ReviewResult> {
   const { config, context } = runtime
-  const startedAt = Date.now()
+  const deadline = Date.now() + config.timeoutMs
   const timeoutController = new AbortController()
   const timeout = setTimeout(() => timeoutController.abort(), config.timeoutMs)
   const turnSignal = context.signal
@@ -146,17 +141,10 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
       return failure('input-budget-exceeded')
     }
 
-    const maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES
+    const attemptTimeoutMs = config.attemptTimeoutMs ?? config.timeoutMs
     for (let attempt = 0; ; attempt += 1) {
-      const remainingMs = config.timeoutMs - (Date.now() - startedAt)
-      if (remainingMs <= 0) {
-        return failure('timeout')
-      }
       const attemptController = new AbortController()
-      const attemptTimeout =
-        config.attemptTimeoutMs === undefined
-          ? undefined
-          : setTimeout(() => attemptController.abort(), config.attemptTimeoutMs)
+      const attemptTimeout = setTimeout(() => attemptController.abort(), attemptTimeoutMs)
       const attemptSignal = AbortSignal.any([reviewSignal, attemptController.signal])
       let category: FailureCategory = 'provider-error'
       try {
@@ -170,7 +158,7 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
           {
             maxRetries: 0,
             signal: attemptSignal,
-            timeoutMs: Math.min(remainingMs, config.attemptTimeoutMs ?? remainingMs),
+            timeoutMs: Math.max(1, Math.min(attemptTimeoutMs, deadline - Date.now())),
             // Gateways such as opencode-go also reject requests without a session id.
             sessionId: `${SESSION_KEY_PREFIX}${context.sessionManager.getSessionId()}`,
             ...(model.reasoning && config.reasoning !== 'off' ? { reasoning: config.reasoning } : {}),
@@ -194,13 +182,13 @@ async function runReview(runtime: ReviewerRuntime, details: PromptPermissionDeta
         if (reviewSignal.aborted) {
           return aborted()
         }
-        if (attempt >= maxRetries) {
+        if (attempt >= config.maxRetries) {
           return failure(attemptController.signal.aborted ? 'attempt-timeout' : category)
         }
       } finally {
         clearTimeout(attemptTimeout)
       }
-      await sleep(retryDelay(attempt), reviewSignal)
+      await sleep(Math.min(FIRST_RETRY_DELAY_MS * 4 ** attempt, MAX_RETRY_DELAY_MS), reviewSignal)
       if (reviewSignal.aborted) {
         return aborted()
       }

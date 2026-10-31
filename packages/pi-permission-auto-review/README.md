@@ -39,28 +39,16 @@ The footer shows whether the reviewer is registered and how many asks it has all
 
 Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.pi/extensions/pi-permission-auto-review/config.json` are merged, the project over the global one; the project file is read only once Pi trusts the project. An invalid config disables automatic decisions.
 
-| Field                   | Default             | Description                                                  |
-| ----------------------- | ------------------- | ------------------------------------------------------------ |
-| `provider`              | `openai-codex`      | Pi provider id of the reviewer model                         |
-| `model`                 | `codex-auto-review` | Reviewer model id                                            |
-| `reasoning`             | `low`               | Reasoning level for review calls                             |
-| `timeoutMs`             | `90000`             | Total budget for one review, including every retry and pause |
-| `maxRetries`            | `2`                 | Retries after the first call, from 0 to 20                   |
-| `attemptTimeoutMs`      | not set             | Wait limit for one complete call, from 1 to 300000 ms        |
-| `includeBaselinePolicy` | `true`              | Include the bundled Guardian policy                          |
-| `additionalPolicy`      | —                   | Operator policy, required when the baseline is disabled      |
-
-`maxRetries: 0` disables retries. Valid denials are never retried. Without `attemptTimeoutMs`, one call can use the remaining `timeoutMs` budget.
-
-This example allows up to 8 calls within 3 minutes, with a 60-second wait limit per call:
-
-```json
-{
-  "timeoutMs": 180000,
-  "maxRetries": 7,
-  "attemptTimeoutMs": 60000
-}
-```
+| Field                   | Default             | Description                                                   |
+| ----------------------- | ------------------- | ------------------------------------------------------------- |
+| `provider`              | `openai-codex`      | Pi provider id of the reviewer model                          |
+| `model`                 | `codex-auto-review` | Reviewer model id                                             |
+| `reasoning`             | `low`               | Reasoning level for review calls                              |
+| `timeoutMs`             | `90000`             | Total budget across retries                                   |
+| `maxRetries`            | `2`                 | Retries when a call fails or its reply is malformed           |
+| `attemptTimeoutMs`      | —                   | Time limit for one call; without it, only `timeoutMs` applies |
+| `includeBaselinePolicy` | `true`              | Include the bundled Guardian policy                           |
+| `additionalPolicy`      | —                   | Operator policy, required when the baseline is disabled       |
 
 ## Programmatic use
 

@@ -121,8 +121,8 @@ describe('/permission-auto-review', () => {
   it('edits the retry count and the attempt timeout', async () => {
     const harness = setup(['Retries:', 'Attempt timeout:'], {
       'Select configuration scope': 'Global configuration',
-      'Configure Retries': 'Enter retry count...',
-      'Configure Attempt Timeout': 'Enter attempt timeout...',
+      'Configure Retries': 'Enter custom value...',
+      'Configure Attempt Timeout': 'Enter custom value...',
       input: '20',
     })
     await harness.run('')
@@ -132,19 +132,18 @@ describe('/permission-auto-review', () => {
     expect(harness.menus[2]).toContain('Retries: 20 (source: global; global: override)')
     expect(harness.menus[2]).toContain('Attempt timeout: 20 ms (source: global; global: override)')
     expect(stored('global')).toMatchObject({ maxRetries: 20, attemptTimeoutMs: 20 })
-    expect(harness.activeConfig()).toMatchObject({ maxRetries: 20, attemptTimeoutMs: 20 })
   })
 
-  it.each([
-    ['21', 'Retries:', 'Configure Retries', 'Enter retry count...'],
-    ['', 'Retries:', 'Configure Retries', 'Enter retry count...'],
-  ])('warns and keeps the draft on input %j for %s', async (input, pick, title, action) => {
-    const harness = setup([pick], { 'Select configuration scope': 'Global configuration', [title]: action, input })
+  it('warns about a value the config rejects and keeps the draft', async () => {
+    const harness = setup(['Attempt timeout:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Attempt Timeout': 'Enter custom value...',
+      input: '30s',
+    })
     await harness.run('')
 
-    expect(harness.notify).toHaveBeenCalledWith(expect.any(String), 'warning')
-    expect(harness.activeConfig()).toMatchObject({ maxRetries: 2 })
-    expect(harness.activeConfig()).not.toHaveProperty('attemptTimeoutMs')
+    expect(harness.notify).toHaveBeenCalledWith(expect.stringContaining('attemptTimeoutMs'), 'warning')
+    expect(harness.menus[1]).toContain('Attempt timeout: not set (source: default; global: inherit)')
   })
 
   it('lets a project field fall back to the global one, field by field', async () => {

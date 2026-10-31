@@ -66,23 +66,18 @@ function editString(
   }
 }
 
-function editInteger(
-  field: 'timeoutMs' | 'maxRetries' | 'attemptTimeoutMs',
-  title: string,
-  action: string,
-  prompt: string,
-): Editor {
+function editInteger(field: 'timeoutMs' | 'maxRetries' | 'attemptTimeoutMs', title: string, prompt: string): Editor {
   return async (ctx, draft, effective) => {
-    const selected = await ctx.ui.select(title, [INHERIT, action])
+    const selected = await ctx.ui.select(title, [INHERIT, CUSTOM])
     if (selected === INHERIT) {
       return withField(draft, field, undefined)
     }
-    const source = selected === undefined ? undefined : await ctx.ui.input(prompt, String(effective[field] ?? ''))
-    if (source === undefined) {
+    const input =
+      selected === undefined ? undefined : (await ctx.ui.input(prompt, String(effective[field] ?? '')))?.trim()
+    if (input === undefined || input === '') {
       return draft
     }
-    // `Number('')` is 0, which would silently save a retry count nobody typed.
-    const value = source.trim() === '' ? Number.NaN : Number(source)
+    const value = Number(input)
     const validated = validateConfigFile({ [field]: value })
     if (!validated.ok) {
       ctx.ui.notify(validated.issue, 'warning')
@@ -95,7 +90,7 @@ function editInteger(
 }
 
 function formatMilliseconds(value: unknown): string {
-  return typeof value === 'number' ? `${value} ms` : String(value ?? 'not set')
+  return `${String(value)} ms`
 }
 
 const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (value: unknown) => string }> = {
@@ -131,21 +126,16 @@ const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (valu
   timeoutMs: {
     label: 'Timeout',
     format: formatMilliseconds,
-    edit: editInteger('timeoutMs', 'Configure Timeout', 'Enter timeout...', 'Timeout in milliseconds'),
+    edit: editInteger('timeoutMs', 'Configure Timeout', 'Timeout in milliseconds'),
   },
   maxRetries: {
     label: 'Retries',
-    edit: editInteger('maxRetries', 'Configure Retries', 'Enter retry count...', 'Retries after the first call'),
+    edit: editInteger('maxRetries', 'Configure Retries', 'Retries after the first call'),
   },
   attemptTimeoutMs: {
     label: 'Attempt timeout',
     format: formatMilliseconds,
-    edit: editInteger(
-      'attemptTimeoutMs',
-      'Configure Attempt Timeout',
-      'Enter attempt timeout...',
-      'Attempt timeout in milliseconds',
-    ),
+    edit: editInteger('attemptTimeoutMs', 'Configure Attempt Timeout', 'Attempt timeout in milliseconds'),
   },
   includeBaselinePolicy: {
     label: 'Baseline policy',
@@ -160,7 +150,7 @@ const EDITORS: Record<ConfigField, { label: string; edit: Editor; format?: (valu
   },
   additionalPolicy: {
     label: 'Additional policy',
-    format: value => (typeof value === 'string' && value.length > 0 ? 'configured' : 'not set'),
+    format: () => 'configured',
     edit: async (ctx, draft, effective) => {
       const selected = await ctx.ui.select('Configure Additional Policy', ['Edit policy...', INHERIT])
       if (selected === INHERIT) {
@@ -190,7 +180,11 @@ function originOf(layers: Layers, field: ConfigField): ConfigScope | 'default' {
 }
 
 function formatValue(field: ConfigField, value: unknown): string {
-  return EDITORS[field].format?.(value) ?? String(value ?? 'not set')
+  if (value === undefined) {
+    return 'not set'
+  }
+
+  return EDITORS[field].format?.(value) ?? String(value)
 }
 
 /** Layer precedence without the schema, which rejects a draft that still breaks the cross-field rule. */

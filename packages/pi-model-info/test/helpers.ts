@@ -15,8 +15,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, vi } from 'vitest'
-import { buildCatalogIndex } from '../src/catalog-index.js'
-import { bareId, vendorOf } from '../src/catalog-sources.js'
+import { buildCatalogIndex } from '../src/catalog/catalog-index.js'
+import { bareId, vendorOf } from '../src/catalog/sources.js'
 
 /** A throwaway project and agent dir, with `PI_CODING_AGENT_DIR` pointed at the latter. */
 export function useWorkspace(): { cwd: string; agentDir: string } {

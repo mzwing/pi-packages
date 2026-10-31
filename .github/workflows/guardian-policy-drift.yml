@@ -84,14 +84,14 @@ jobs:
         run: |
           {
             echo 'Upstream OpenAI Codex Guardian policy has moved past the revision'
-            echo '`src/upstream.ts` is pinned to.'
+            echo '`src/prompt/upstream.ts` is pinned to.'
             echo
             echo '```'
             cat report.txt
             echo '```'
             echo
             echo 'Port what applies into the adapted text in'
-            echo '`packages/pi-permission-auto-review/src/policy.ts`, then run'
+            echo '`packages/pi-permission-auto-review/src/prompt/policy.ts`, then run'
             echo '`pnpm --filter @mzwing/pi-permission-auto-review sync:policy --pin`.'
             echo 'Do not pin before porting: `POLICY_REVISION` is written to the permission'
             echo 'review log, so a pin that outruns the text is a false audit record.'

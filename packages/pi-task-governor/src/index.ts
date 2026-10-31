@@ -1,5 +1,5 @@
-import type { Runtime } from './runtime.js'
-import type { State } from './task.js'
+import type { Runtime } from './sessions/runtime.js'
+import type { State } from './tasks/task.js'
 import type {
   BeforeAgentStartEventResult,
   ExtensionAPI,
@@ -9,21 +9,21 @@ import type {
 import { dirname } from 'node:path'
 import process from 'node:process'
 import { MAIL_EVENT } from '@mzwing/pi-session-hub/api'
-import { childBinding } from './children.js'
 import { EXTENSION_ID } from './config.js'
-import { activateCoordinatorTools, coordinate, registerCoordinatorTools, renderBoard } from './coordinator.js'
-import { registerDeclareTools } from './declare.js'
-import { loadEnvironment } from './env.js'
-import { announceExit, registerExecutor } from './executor.js'
-import { governBash, registerGuard, writeShims } from './guard.js'
-import { handoffMessage, roleSection } from './prompts.js'
-import { registerReviewerTools } from './reviewer.js'
-import { requireRole, resumesLease } from './runtime.js'
-import { createScheduler, executorStatus, STORE_FLAG } from './scheduler.js'
-import { findRepoRoot, readState, storeDirectory, storeExists, updateState } from './store.js'
-import { claimedRoot, isOpen, waitsFor } from './task.js'
+import { activateCoordinatorTools, coordinate, registerCoordinatorTools, renderBoard } from './roles/coordinator.js'
+import { registerDeclareTools } from './roles/declare.js'
+import { announceExit, registerExecutor } from './roles/executor.js'
+import { handoffMessage, roleSection } from './roles/prompts.js'
+import { registerReviewerTools } from './roles/reviewer.js'
+import { registerWorkTools } from './roles/work.js'
+import { childBinding } from './sessions/children.js'
+import { governBash, registerGuard, writeShims } from './sessions/guard.js'
+import { requireRole, resumesLease } from './sessions/runtime.js'
+import { createScheduler, executorStatus, STORE_FLAG } from './tasks/scheduler.js'
+import { findRepoRoot, readState, storeDirectory, storeExists, updateState } from './tasks/store.js'
+import { claimedRoot, isOpen, waitsFor } from './tasks/task.js'
 import { describeError } from './tooling.js'
-import { registerWorkTools } from './work.js'
+import { loadEnvironment } from './workspace/env.js'
 
 const SUBCOMMANDS = ['coordinate', 'pause', 'resume', 'unlock', 'handoff']
 const DEFAULT_UNLOCK_MINUTES = 30

@@ -1,4 +1,4 @@
-import type { Runtime } from './runtime.js'
+import type { Runtime } from './sessions/runtime.js'
 import type { TString } from 'typebox'
 import { Type } from 'typebox'
 

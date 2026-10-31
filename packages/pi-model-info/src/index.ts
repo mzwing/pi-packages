@@ -1,10 +1,10 @@
-import type { CatalogSnapshot } from './catalog.js'
+import type { CatalogSnapshot } from './catalog/store.js'
 import type { ResolvedConfig } from './types.js'
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import { CatalogStore } from './catalog.js'
-import { buildCompletions, COMMAND_NAME, formatDetail, formatSummary } from './command.js'
+import { CatalogStore } from './catalog/store.js'
 import { loadConfig } from './config.js'
-import { ProviderApplier } from './provider-apply.js'
+import { ProviderApplier } from './providers/applier.js'
+import { buildCompletions, COMMAND_NAME, formatDetail, formatSummary } from './ui/command.js'
 import { describeError, warn } from './util.js'
 
 export default function modelInfo(pi: ExtensionAPI): void {

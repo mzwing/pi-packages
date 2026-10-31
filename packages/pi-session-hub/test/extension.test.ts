@@ -1,10 +1,10 @@
-import type { Mail } from '../src/mailbox.js'
+import type { Mail } from '../src/mail/mailbox.js'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { MAIL_EVENT, readQueue, sendMail } from '../src/mailbox.js'
-import { findLiveSession } from '../src/registry.js'
+import { MAIL_EVENT, readQueue, sendMail } from '../src/mail/mailbox.js'
+import { findLiveSession } from '../src/sessions/registry.js'
 import { loadHub, sessionContext, useAgentDir } from './helpers.js'
 
 function outgoing(body: string, wake = true) {

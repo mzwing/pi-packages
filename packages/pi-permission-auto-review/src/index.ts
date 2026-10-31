@@ -1,6 +1,6 @@
-import type { ActivationResult } from './command.js'
-import type { LoadConfigResult } from './config-store.js'
-import type { AutoReviewConfig } from './config.js'
+import type { ActivationResult } from './config/command.js'
+import type { AutoReviewConfig } from './config/config.js'
+import type { LoadConfigResult } from './config/store.js'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type {
   Authorizer,
@@ -10,11 +10,11 @@ import type {
 } from '@gotgenes/pi-permission-system'
 import { existsSync } from 'node:fs'
 import { getPermissionsService, PERMISSIONS_READY_CHANNEL } from '@gotgenes/pi-permission-system'
-import { DenialCircuitBreaker } from './circuit-breaker.js'
-import { registerAutoReviewCommand } from './command.js'
-import { configPath, loadConfig } from './config-store.js'
-import { EXTENSION_ID } from './config.js'
-import { createPermissionReviewer } from './reviewer.js'
+import { registerAutoReviewCommand } from './config/command.js'
+import { EXTENSION_ID } from './config/config.js'
+import { configPath, loadConfig } from './config/store.js'
+import { DenialCircuitBreaker } from './reviewer/circuit-breaker.js'
+import { createPermissionReviewer } from './reviewer/reviewer.js'
 
 const AUTHORIZER_NAME = 'auto-review'
 const VERDICT_LABELS = [

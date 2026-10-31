@@ -13,8 +13,8 @@ import {
   unpublishPermissionsService,
 } from '@gotgenes/pi-permission-system'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { configPath } from '../src/config-store.js'
-import { EXTENSION_ID } from '../src/config.js'
+import { EXTENSION_ID } from '../src/config/config.js'
+import { configPath } from '../src/config/store.js'
 import permissionAutoReview from '../src/index.js'
 import { permissionDetails, useWorkspace, writeFile } from './helpers.js'
 

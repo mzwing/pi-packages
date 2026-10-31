@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import process from 'node:process'
 import { describe, expect, it, vi } from 'vitest'
-import { readState, storeDirectory, updateState } from '../src/store.js'
-import { claimRoot, declareRoot } from '../src/task.js'
+import { readState, storeDirectory, updateState } from '../src/tasks/store.js'
+import { claimRoot, declareRoot } from '../src/tasks/task.js'
 import { DEAD_PID, PARSER_SPEC, signedOff, useWorkspace } from './helpers.js'
 import { loadGovernor } from './pi.js'
 

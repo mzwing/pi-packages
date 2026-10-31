@@ -1,11 +1,11 @@
-import type { Mail } from './mailbox.js'
-import type { SessionRecord } from './registry.js'
+import type { Mail } from './mail/mailbox.js'
+import type { SessionRecord } from './sessions/registry.js'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type { Server } from 'node:net'
 import process from 'node:process'
-import { listenForMail, MAIL_EVENT, readQueue, removeMail, stopListening } from './mailbox.js'
-import { registerSession, unregisterSession } from './registry.js'
-import { DEFAULT_TRANSCRIPT, describeSessions, describeTranscript, registerSessionTools } from './tools.js'
+import { listenForMail, MAIL_EVENT, readQueue, removeMail, stopListening } from './mail/mailbox.js'
+import { registerSession, unregisterSession } from './sessions/registry.js'
+import { DEFAULT_TRANSCRIPT, describeSessions, describeTranscript, registerSessionTools } from './sessions/tools.js'
 
 const MESSAGE_TYPE = 'session-hub:message'
 

@@ -1,11 +1,11 @@
-import type { SpecInput } from '../src/task.js'
+import type { SpecInput } from '../src/tasks/task.js'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, vi } from 'vitest'
-import { saveEnvironment } from '../src/env.js'
-import { storeDirectory, updateState } from '../src/store.js'
-import { beginReview, claimRoot, declareRoot, recordVerdict } from '../src/task.js'
-import { addWorkspace, bookmarkCommit, headOf, saveWorkingCopy } from '../src/vcs.js'
+import { storeDirectory, updateState } from '../src/tasks/store.js'
+import { beginReview, claimRoot, declareRoot, recordVerdict } from '../src/tasks/task.js'
+import { saveEnvironment } from '../src/workspace/env.js'
+import { addWorkspace, bookmarkCommit, headOf, saveWorkingCopy } from '../src/workspace/vcs.js'
 import { initRepository } from './jj.js'
 
 export interface Workspace {

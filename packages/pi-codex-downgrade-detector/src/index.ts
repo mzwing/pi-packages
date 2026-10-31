@@ -1,12 +1,19 @@
-import type { HeaderObservation } from './observe.js'
-import type { Verdict } from './verdict.js'
+import type { HeaderObservation } from './detection/observe.js'
+import type { Verdict } from './detection/verdict.js'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import type { ExtensionAPI, ModelRegistry } from '@earendil-works/pi-coding-agent'
 import { configPaths, DEFAULT_CONFIG, EXTENSION_ID, loadConfig } from './config.js'
-import { createIdentityResolver } from './identity.js'
-import { observeHeaders, observeSentEffort, observeTurn } from './observe.js'
-import { renderAlert, renderConfig, renderDetail, renderReport, renderStatus, renderWaitingStatus } from './render.js'
-import { isSubstitution, judgeTurn } from './verdict.js'
+import { createIdentityResolver } from './detection/identity.js'
+import { observeHeaders, observeSentEffort, observeTurn } from './detection/observe.js'
+import { isSubstitution, judgeTurn } from './detection/verdict.js'
+import {
+  renderAlert,
+  renderConfig,
+  renderDetail,
+  renderReport,
+  renderStatus,
+  renderWaitingStatus,
+} from './ui/render.js'
 
 const COMMAND_NAME = 'codex-downgrade'
 const HISTORY_LIMIT = 50

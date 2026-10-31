@@ -1,5 +1,33 @@
 # @mzwing/pi-permission-auto-review
 
+## 0.10.0
+
+### Minor Changes
+
+- [#34](https://github.com/mzwing/pi-packages/pull/34) [`0b8ac4c`](https://github.com/mzwing/pi-packages/commit/0b8ac4c02fc2bf139d328f82ac2c1192b48a16ec) Thanks [@asdfML](https://github.com/asdfML)! - feat(pi-permission-auto-review): configure review retries and a time limit for each call
+  
+  `maxRetries` sets how many times a review retries a call that fails or returns a malformed reply, from 0 to 20 and 2 by default. `attemptTimeoutMs` abandons a call that runs longer and retries it like a failed one; without it, a call can run until `timeoutMs` ends the review. The pause between retries grows from 250 ms to at most 30 seconds, and the calls and pauses together stay within `timeoutMs`.
+  
+  `AutoReviewConfig`, exported from `@mzwing/pi-permission-auto-review/review`, now requires `maxRetries`, which `DEFAULT_CONFIG` includes.
+
+- [`da837db`](https://github.com/mzwing/pi-packages/commit/da837db821f043aef019227f1aaaab46c5d20d36) Thanks [@mzwing](https://github.com/mzwing)! - refactor: group `src/` and `test/` into folders by responsibility
+  
+  Each package keeps its modules in folders by subsystem instead of side by side in one `src/`, and its tests in matching folders under `test/`. Entry points, exports and config files are unchanged.
+
+### Patch Changes
+
+- [`2267bf4`](https://github.com/mzwing/pi-packages/commit/2267bf483c6647ef187caba736770fb3c5b0a889) Thanks [@mzwing](https://github.com/mzwing)! - chore: accept Pi 1.4 and @gotgenes/pi-permission-system v42
+  
+  The Pi peer range moves to `^1.4.0`, the line these packages are built and tested against. From 1.4.0 on, resuming a session that began before pi-session-hub was installed, `session_spawn`'s `resume` included, activates the hub's tools instead of leaving them off.
+  
+  pi-permission-auto-review accepts `@gotgenes/pi-permission-system` v42, whose only breaking change, a limit of 1,000 entries on each of its config arrays, does not affect the reviewer.
+
+- [`4471e84`](https://github.com/mzwing/pi-packages/commit/4471e840317511541fa02c3d8b59eb7f89a44c79) Thanks [@mzwing](https://github.com/mzwing)! - fix: validate configs with valibot instead of zod
+  
+  pi-codex-downgrade-detector, pi-model-info, pi-permission-auto-review and pi-task-governor no longer depend on zod: they validate their config with valibot, bundled into each package, so installing one adds nothing beyond its peer dependencies. Config errors follow valibot's wording, and an unknown key is reported at its own path, as in `reasonning: Invalid key: Expected never but received "reasonning"`.
+  
+  pi-model-info reports a rule id or a source given twice against the file that repeats it. Before, it named the project's config file wherever the repeat was.
+
 ## 0.9.2
 
 ### Patch Changes

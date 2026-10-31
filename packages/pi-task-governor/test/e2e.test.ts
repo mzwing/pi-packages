@@ -62,7 +62,7 @@ describe('governed task end to end', () => {
         () => expect(notify).toHaveBeenCalledWith(expect.stringContaining('T1 passed its review'), true),
         waiting,
       )
-      updateState(store, state => approve(state, 'T1', 'boss', Date.now()))
+      updateState(store, state => approve(state, 'T1', 'boss', 'feat: add `a.txt`', Date.now()))
       scheduler.tick()
       await vi.waitFor(() => expect(readState(store).tasks['T1']?.state).toBe('done'), waiting)
     } finally {
@@ -72,6 +72,9 @@ describe('governed task end to end', () => {
 
     expect(jj(workspace.repo, 'file', 'show', '-r', 'main', 'a.txt')).toBe('hello\n')
     expect(task.merged).toBe(jj(workspace.repo, 'log', '--no-graph', '-r', 'main', '-T', 'commit_id'))
+    expect(jj(workspace.repo, 'log', '--no-graph', '-r', `${task.base.commit}..main`, '-T', 'description')).toBe(
+      'feat: add `a.txt`\n',
+    )
     expect(task.reviews).toMatchObject([
       {
         verdict: 'pass',

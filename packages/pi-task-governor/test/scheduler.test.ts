@@ -9,7 +9,7 @@ import { environmentPath } from '../src/env.js'
 import { createScheduler } from '../src/scheduler.js'
 import { initStore, readState, storeDirectory, updateState } from '../src/store.js'
 import { approve, beginReview, cancelTask, claimRoot, completeMerge, declareRoot, logEvent } from '../src/task.js'
-import { bookmarkCommit, commitWorkingCopy } from '../src/vcs.js'
+import { bookmarkCommit, changedFiles, saveWorkingCopy } from '../src/vcs.js'
 import { DEAD_PID, PARSER_SPEC, signedOff, useWorkspace } from './helpers.js'
 import { jj } from './jj.js'
 
@@ -259,16 +259,20 @@ describe('scheduler', () => {
     )
   })
 
-  it('merges a task the coordinator approved, then removes its workspace', async () => {
+  it('merges the commit of a task the coordinator approved, with the message it gave, then removes its workspace', async () => {
     const { store, scheduler, notify } = setUp({}, 0)
     const id = await signedOff(workspace, 'a.txt', 'a\n')
-    const { signedCommit, claim } = readState(store).tasks[id]!
-    updateState(store, state => approve(state, id, 'boss', 5))
+    const { base, signedCommit, claim } = readState(store).tasks[id]!
+    updateState(store, state => approve(state, id, 'boss', 'fix(parser): accept CRLF line endings', 5))
 
     scheduler.tick()
 
     await vi.waitFor(() => expect(readState(store).tasks[id]?.state).toBe('done'))
-    expect(await bookmarkCommit(workspace.repo, 'main')).toBe(signedCommit)
+    expect(readState(store).tasks[id]?.merged).toBe(await bookmarkCommit(workspace.repo, 'main'))
+    expect(jj(workspace.repo, 'log', '--no-graph', '-r', `${base.commit}..main`, '-T', 'description')).toBe(
+      'fix(parser): accept CRLF line endings\n',
+    )
+    expect(await changedFiles(workspace.repo, signedCommit!, 'main')).toEqual([])
     expect(notify).toHaveBeenCalledWith(`${id} is merged into main, and every task is finished.`, true)
     await vi.waitFor(() => expect(existsSync(claim!.workspace.path)).toBe(false))
     expect(spawnSession).not.toHaveBeenCalled()
@@ -279,8 +283,8 @@ describe('scheduler', () => {
     const first = await signedOff(workspace, 'shared.txt', 'line1\nline2 by T1\nline3\n')
     const second = await signedOff(workspace, 'shared.txt', 'line1\nline2 by T2\nline3\n')
     updateState(store, state => {
-      approve(state, first, 'boss', 5)
-      approve(state, second, 'boss', 5)
+      approve(state, first, 'boss', 'fix: reword line 2', 5)
+      approve(state, second, 'boss', 'fix: credit line 2', 5)
     })
 
     scheduler.tick()
@@ -302,10 +306,10 @@ describe('scheduler', () => {
   it('sends back an approved task whose workspace changed after its review', async () => {
     const { store, scheduler, notify } = setUp({}, 0)
     const id = await signedOff(workspace, 'a.txt', 'a\n')
-    const { workspace: task } = readState(store).tasks[id]!.claim!
-    writeFileSync(join(task.path, 'b.txt'), 'b\n')
-    await commitWorkingCopy(task, 'stray change')
-    updateState(store, state => approve(state, id, 'boss', 5))
+    const { base, claim } = readState(store).tasks[id]!
+    writeFileSync(join(claim!.workspace.path, 'b.txt'), 'b\n')
+    await saveWorkingCopy(workspace.repo, claim!.workspace, base.commit!)
+    updateState(store, state => approve(state, id, 'boss', 'fix(parser): accept CRLF line endings', 5))
 
     scheduler.tick()
 
@@ -320,7 +324,7 @@ describe('scheduler', () => {
     const { store, scheduler, notify, changed } = setUp({}, 0)
     const id = await signedOff(workspace, 'a.txt', 'a\n')
     updateState(store, state => {
-      approve(state, id, 'boss', 5)
+      approve(state, id, 'boss', 'fix(parser): accept CRLF line endings', 5)
       state.tasks[id]!.base.bookmark = 'gone'
     })
 
@@ -332,7 +336,7 @@ describe('scheduler', () => {
     // The pass the failed merge starts asks for the sign-off again.
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
     const task = readState(store).tasks[id]
-    expect([task?.state, task?.approvedBy]).toEqual(['approving', undefined])
+    expect([task?.state, task?.approval]).toEqual(['approving', undefined])
   })
 
   it('reports a cleanup that fails and goes on scheduling', async () => {

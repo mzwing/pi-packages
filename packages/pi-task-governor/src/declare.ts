@@ -19,7 +19,7 @@ import {
   sendBack,
 } from './task.js'
 import { nonBlank, textResult } from './tooling.js'
-import { bookmarkCommit, commitWorkingCopy, headOf } from './vcs.js'
+import { bookmarkCommit, headOf, saveWorkingCopy } from './vcs.js'
 
 const SPEC_PARAMETERS = {
   title: nonBlank('Short imperative title'),
@@ -133,7 +133,7 @@ export function registerDeclareTools(pi: ExtensionAPI, host: Host): void {
         const focus = focusOf(state, root)
         const workspace = root.claim!.workspace
         // The subtask's review covers only what changes after this point.
-        await commitWorkingCopy(workspace, `${focus.id}: ${focus.title}`)
+        await saveWorkingCopy(runtime.repoRoot, workspace, root.base.commit!)
         const head = await headOf(runtime.repoRoot, workspace)
         const brief = updateState(runtime.store, current =>
           renderBrief(current, declareChild(current, focus.id, params, runtime.sessionId, head, Date.now())),

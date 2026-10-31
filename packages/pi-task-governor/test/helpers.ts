@@ -5,7 +5,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { saveEnvironment } from '../src/env.js'
 import { storeDirectory, updateState } from '../src/store.js'
 import { beginReview, claimRoot, declareRoot, recordVerdict } from '../src/task.js'
-import { addWorkspace, bookmarkCommit, commitWorkingCopy, headOf } from '../src/vcs.js'
+import { addWorkspace, bookmarkCommit, headOf, saveWorkingCopy } from '../src/vcs.js'
 import { initRepository } from './jj.js'
 
 export interface Workspace {
@@ -78,7 +78,7 @@ export async function signedOff(workspace: Workspace, file: string, contents: st
   const base = await bookmarkCommit(workspace.repo, 'main')
   await addWorkspace(workspace.repo, task, base)
   writeFileSync(join(task.path, file), contents)
-  await commitWorkingCopy(task, `${id}: edit ${file}`)
+  await saveWorkingCopy(workspace.repo, task, base)
   const head = await headOf(workspace.repo, task)
   saveEnvironment(store, id, { changes: {} })
   updateState(store, state => {

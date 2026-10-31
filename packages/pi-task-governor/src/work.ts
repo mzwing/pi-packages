@@ -13,7 +13,7 @@ import { requireRole } from './runtime.js'
 import { readState, updateState } from './store.js'
 import { beginReview, claimedRoot, failedReviewsInARow, focusOf, logEvent, reopen, requireTask } from './task.js'
 import { nonBlank, textResult } from './tooling.js'
-import { commitWorkingCopy, diff, headOf } from './vcs.js'
+import { diff, headOf, saveWorkingCopy } from './vcs.js'
 
 // Each time a task fails this many reviews in a row, its executor stops to ask the coordinator how to go on.
 const FAILED_REVIEWS_BEFORE_ASKING = 3
@@ -21,6 +21,7 @@ const FAILED_REVIEWS_BEFORE_ASKING = 3
 interface Work {
   runtime: Runtime
   state: State
+  root: Task
   /** The deepest open task, where depth-first work happens. */
   focus: Task
   workspace: Workspace
@@ -38,7 +39,7 @@ function currentWork(host: Host): Work {
     throw new Error(`${focus.id} is ${focus.state}, not open for work.`)
   }
 
-  return { runtime, state, focus, workspace: root.claim!.workspace }
+  return { runtime, state, root, focus, workspace: root.claim!.workspace }
 }
 
 export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
@@ -59,7 +60,7 @@ export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
       defaultActive: false,
       executionMode: 'sequential',
       async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-        const { runtime, state, focus, workspace } = currentWork(host)
+        const { runtime, state, root, focus, workspace } = currentWork(host)
         const { model, thinking, maxTurns } = state.config.roles.developer
         const binding: ChildBinding = {
           role: 'developer',
@@ -77,7 +78,7 @@ export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
           signal,
         )
         lastReport = report
-        const changed = await commitWorkingCopy(workspace, `${focus.id}: ${focus.title}\n\n${report}`)
+        const changed = await saveWorkingCopy(runtime.repoRoot, workspace, root.base.commit!)
         const head = await headOf(runtime.repoRoot, workspace)
         const run = changed ? (await diff(runtime.repoRoot, before, head, true)).trim().split('\n').at(-1) : undefined
         updateState(runtime.store, current =>
@@ -109,8 +110,8 @@ export function registerWorkTools(pi: ExtensionAPI, host: Host): void {
       defaultActive: false,
       executionMode: 'sequential',
       async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
-        const { runtime, state, focus, workspace } = currentWork(host)
-        await commitWorkingCopy(workspace, `${focus.id}: ${focus.title}`)
+        const { runtime, state, root, focus, workspace } = currentWork(host)
+        await saveWorkingCopy(runtime.repoRoot, workspace, root.base.commit!)
         const head = await headOf(runtime.repoRoot, workspace)
         if (head === focus.base.commit) {
           throw new Error(`${focus.id} has no changes to review yet.`)

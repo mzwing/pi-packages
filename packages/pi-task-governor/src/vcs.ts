@@ -7,7 +7,6 @@ const execFileAsync = promisify(execFile)
 
 // The user's own jj config applies; these keep its output machine-readable whatever that config says.
 const BASE_ARGUMENTS = ['--no-pager', '--color=never', '--config', 'ui.diff-formatter=:git']
-const OPERATION_ID = /--no-integrate-operation was requested: ([0-9a-f]+)/
 // Another task can move the bookmark between this task's rebase and its bookmark update.
 const MERGE_ATTEMPTS = 3
 
@@ -100,12 +99,15 @@ export async function isClean(workspace: Workspace): Promise<boolean> {
   return stdout.trim() === 'true'
 }
 
-/** Commits whatever the working copy holds; false when it held nothing. */
-export async function commitWorkingCopy(workspace: Workspace, message: string): Promise<boolean> {
+/**
+ * Keeps a task's work as one undescribed commit on `base`: the first change becomes it, later ones fold into it. A
+ * clean working copy returns false untouched, since squashing nothing would still rewrite the commit.
+ */
+export async function saveWorkingCopy(repo: string, workspace: Workspace, base: string): Promise<boolean> {
   if (await isClean(workspace)) {
     return false
   }
-  await jj(workspace.path, ['commit', '-m', message])
+  await jj(workspace.path, [(await headOf(repo, workspace)) === base ? 'new' : 'squash'])
 
   return true
 }
@@ -149,9 +151,9 @@ export async function landedAfter(repo: string, base: string, bookmark: string, 
 }
 
 /**
- * Merges a signed-off task into its bookmark, which only ever moves forward. A head that does not descend from the
- * bookmark is rebased onto it first, as a dry run: on conflict the rebase is dropped and the workspace gets a merge
- * commit for the task's executor to resolve; otherwise it is kept, and `verify` re-runs the checks on the new head.
+ * Merges a signed-off task into its bookmark, which only ever moves forward, with `message` on its commit. A head that
+ * does not descend from the bookmark is rebased onto it first: on conflict the rebase stays for the task's executor to
+ * resolve, and otherwise `verify` re-runs the checks on the new head.
  */
 export async function mergeInto(
   repo: string,
@@ -162,36 +164,27 @@ export async function mergeInto(
 ): Promise<MergeResult> {
   for (let attempt = 1; ; attempt += 1) {
     const head = await headOf(repo, workspace)
-    // Pinned, so the dry run, its conflict check and the merge commit all see the same bookmark commit.
+    // Pinned, so the ancestor check, the rebase and the result all name one bookmark commit.
     const onto = await bookmarkCommit(repo, bookmark)
     if (!(await isAncestor(repo, onto, head))) {
-      const { stderr } = await inRepo(repo, ['--no-integrate-operation', 'rebase', '-b', head, '-o', onto])
-      const operation = OPERATION_ID.exec(stderr)?.[1]
-      if (operation === undefined) {
-        throw new Error(`jj did not report the rebase operation: ${stderr.trim()}`)
-      }
-      const { stdout: conflicts } = await inRepo(repo, [
-        '--at-op',
-        operation,
+      await jj(workspace.path, ['rebase', '-b', head, '-o', onto])
+      const { stdout: conflicted } = await inRepo(repo, [
         'log',
         '--no-graph',
         '-r',
-        `conflicts() & (${onto}..${workspace.name}@-)`,
+        `${workspace.name}@-`,
         '-T',
-        'commit_id',
+        'conflict',
       ])
-      if (conflicts.trim() !== '') {
-        await jj(workspace.path, ['new', `${workspace.name}@-`, onto, '-m', message])
-
+      if (conflicted.trim() === 'true') {
         return { kind: 'conflicted', onto }
       }
-      await inRepo(repo, ['op', 'integrate', operation])
-      await jj(workspace.path, ['workspace', 'update-stale'])
       const failure = await verify()
       if (failure !== undefined) {
         return { kind: 'failed-checks', detail: failure, onto }
       }
     }
+    await jj(workspace.path, ['describe', '-r', `${workspace.name}@-`, '-m', message])
     const target = await headOf(repo, workspace)
     try {
       await inRepo(repo, ['bookmark', 'set', bookmark, '-r', target])

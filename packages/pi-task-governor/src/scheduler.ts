@@ -248,7 +248,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
         return
       }
       const checks = { store, environment: loadEnvironment(store, task.id).changes }
-      const result = await mergeInto(repoRoot, workspace, bookmark, `${task.id}: merge ${bookmark}`, async () =>
+      const result = await mergeInto(repoRoot, workspace, bookmark, task.approval!.commitMessage, async () =>
         failedChecks(checks, workspace, task.spec.acceptance, await headOf(repoRoot, workspace)),
       )
       switch (result.kind) {
@@ -271,7 +271,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
           returnFromMerge(
             store,
             task.id,
-            `merging into ${bookmark} conflicted; the workspace holds a merge commit with the conflict markers`,
+            `merging into ${bookmark} conflicted; the workspace holds the conflict markers`,
             result.onto,
           )
           break
@@ -286,7 +286,7 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
       }
     } catch (error) {
       updateState(store, state => {
-        requireTask(state, task.id).approvedBy = undefined
+        requireTask(state, task.id).approval = undefined
       })
       notify(
         `Merging ${task.id} into ${bookmark} failed: ${describeError(error)}\nApprove it again to retry, or send it back with task_reject.`,
@@ -328,10 +328,10 @@ export function createScheduler(host: Host, notify: (message: string, wake: bool
     }
     for (const task of roots.filter(root => root.state === 'approving')) {
       const request = `${task.id}:${task.reviews.length}`
-      if (task.approvedBy === undefined && !requested.has(request)) {
+      if (task.approval === undefined && !requested.has(request)) {
         requested.add(request)
         await requestSignOff(repoRoot, state, task)
-      } else if (task.approvedBy !== undefined && !merging) {
+      } else if (task.approval !== undefined && !merging) {
         merging = true
         void merge(store, repoRoot, task).finally(() => {
           merging = false

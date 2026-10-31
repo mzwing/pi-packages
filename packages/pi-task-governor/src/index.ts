@@ -45,7 +45,7 @@ function statusText(state: State): string {
     ...part(waiting, 'waiting'),
     ...part(count('asking'), 'asking'),
     ...part(count('stalled'), 'stalled'),
-    ...part(roots.filter(task => task.state === 'approving' && task.approvedBy === undefined).length, 'to sign off'),
+    ...part(roots.filter(task => task.state === 'approving' && task.approval === undefined).length, 'to sign off'),
     ...(state.paused ? ['paused'] : []),
   ].join(' · ')
 }

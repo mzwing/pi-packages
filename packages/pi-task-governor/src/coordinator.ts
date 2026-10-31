@@ -32,7 +32,7 @@ function describeRun(state: State, task: Task): string {
     return waiting.length === 0 ? '' : `waits for ${waiting.join(', ')}`
   }
   if (task.state === 'approving') {
-    return task.approvedBy === undefined ? 'waits for your sign-off' : 'merging'
+    return task.approval === undefined ? 'waits for your sign-off' : 'merging'
   }
   const claim = task.claim
   if (claim === undefined) {
@@ -159,11 +159,18 @@ export function registerCoordinatorTools(pi: ExtensionAPI, host: Host): void {
       label: 'Approve task',
       description:
         'Sign off a root task that passed its review, which merges it into its bookmark. You hear when it lands, or when it goes back to its executor because the merge conflicts or breaks a check.',
-      parameters: Type.Object({ id: nonBlank('Root task id') }),
+      parameters: Type.Object({
+        id: nonBlank('Root task id'),
+        commitMessage: nonBlank(
+          "The task's commit message; read the user's commit message skill first if there is one",
+        ),
+      }),
       defaultActive: false,
       async execute(_toolCallId, params) {
         const runtime = requireRole(host.runtime(), 'coordinator')
-        updateState(runtime.store, state => approve(state, params.id, runtime.sessionId, Date.now()))
+        updateState(runtime.store, state =>
+          approve(state, params.id, runtime.sessionId, params.commitMessage, Date.now()),
+        )
         host.changed()
 
         return textResult(`${params.id} is approved and merges now.`)

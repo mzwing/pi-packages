@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../src/config.js'
 import { initStore, readState, storeDirectory, updateState } from '../src/store.js'
 import { beginReview, claimRoot, declareRoot } from '../src/task.js'
-import { addWorkspace, bookmarkCommit, commitWorkingCopy, headOf } from '../src/vcs.js'
+import { addWorkspace, bookmarkCommit, headOf, saveWorkingCopy } from '../src/vcs.js'
 import { ADD_FILE_SPEC, useWorkspace } from './helpers.js'
 import { loadGovernor } from './pi.js'
 
@@ -31,7 +31,7 @@ describe('reviewer session', () => {
     const base = await bookmarkCommit(workspace.repo, 'main')
     await addWorkspace(workspace.repo, task, base)
     writeFileSync(join(task.path, 'a.txt'), 'hello\n')
-    await commitWorkingCopy(task, 'T1: add a.txt')
+    await saveWorkingCopy(workspace.repo, task, base)
     const head = await headOf(workspace.repo, task)
     updateState(store, state => {
       state.lease = { sessionId: 'boss', pid: process.pid }

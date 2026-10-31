@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import process from 'node:process'
 import { describe, expect, it, vi } from 'vitest'
 import { readState, storeDirectory, updateState } from '../src/store.js'
@@ -97,15 +98,19 @@ describe('governor extension', () => {
     const bystander = loadGovernor({ cwd: workspace.repo, sessionId: 'bystander' })
     await bystander.start()
 
-    await expect(bystander.tool('task_approve', { id: approved })).rejects.toThrow('Only the coordinator session')
+    await expect(bystander.tool('task_approve', { id: approved, commitMessage: 'feat: add `a.txt`' })).rejects.toThrow(
+      'Only the coordinator session',
+    )
     await governor.tool('task_reject', { id: refused, findings: 'Duplicates the lexer' })
-    await governor.tool('task_approve', { id: approved })
+    await governor.tool('task_approve', { id: approved, commitMessage: 'feat: add `a.txt`' })
 
     expect(readState(storeDirectory(workspace.repo)).tasks[refused]).toMatchObject({
       state: 'claimed',
       reviews: [{ verdict: 'pass' }, { reviewer: 'boss', verdict: 'fail', findings: 'Duplicates the lexer' }],
     })
     await vi.waitFor(() => expect(readState(storeDirectory(workspace.repo)).tasks[approved]?.state).toBe('done'))
+    // The scheduler removes the merged task's workspace afterwards, which must finish before the repository goes.
+    await vi.waitFor(() => expect(existsSync(`${workspace.repo}.tasks/${approved}`)).toBe(false))
   })
 
   it('lets the coordinator revise a task that waits to start or for its answer, but not one at work', async () => {

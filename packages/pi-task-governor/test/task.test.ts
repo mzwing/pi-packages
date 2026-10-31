@@ -200,13 +200,13 @@ describe('reviewing tasks', () => {
     expect(current.tasks['T1.1']?.state).toBe('done')
     expect(current.tasks['T1']).toMatchObject({ state: 'approving', signedBy: 'reviewer', signedCommit: 'c2' })
     current.tasks['T1']!.claim!.sessions = 2
-    approve(current, 'T1', 'coordinator', 6)
+    approve(current, 'T1', 'coordinator', 'fix(parser): normalise line endings', 6)
     expect(current.tasks['T1']?.claim?.sessions).toBe(0)
-    expect(() => approve(current, 'T1', 'coordinator', 6)).toThrow('T1 is not waiting for a sign-off.')
+    expect(() => approve(current, 'T1', 'coordinator', 'fix: again', 6)).toThrow('T1 is not waiting for a sign-off.')
     completeMerge(current, 'T1', 'c3', 'main2', 7)
     expect(current.tasks['T1']).toMatchObject({
       state: 'done',
-      approvedBy: 'coordinator',
+      approval: { by: 'coordinator', commitMessage: 'fix(parser): normalise line endings' },
       merged: 'c3',
       base: { bookmark: 'main', commit: 'main2' },
     })
@@ -236,14 +236,14 @@ describe('reviewing tasks', () => {
     const current = claimed()
     beginReview(current, 'T1', 'executor', 'c1', 3)
     recordVerdict(current, 'T1', review())
-    approve(current, 'T1', 'coordinator', 4)
+    approve(current, 'T1', 'coordinator', 'fix(parser): normalise line endings', 4)
     reopen(current, 'T1', 'conflicts with main', 4, 'main2')
 
     expect(current.tasks['T1']).toMatchObject({
       state: 'claimed',
       signedBy: undefined,
       signedCommit: undefined,
-      approvedBy: undefined,
+      approval: undefined,
       base: { bookmark: 'main', commit: 'main2' },
     })
     expect(current.tasks['T1']?.log.at(-1)?.event).toBe('reopened: conflicts with main')

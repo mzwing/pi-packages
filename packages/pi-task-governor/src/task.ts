@@ -85,8 +85,8 @@ export interface Task {
   reviews: Review[]
   signedBy?: string | undefined
   signedCommit?: string | undefined
-  /** The coordinator session that signed off a reviewed root task for merging. */
-  approvedBy?: string | undefined
+  /** The coordinator session's sign-off of a reviewed root task, with the message its commit lands with. */
+  approval?: { by: string; commitMessage: string } | undefined
   merged?: string | undefined
   log: { at: number; event: string }[]
 }
@@ -337,17 +337,17 @@ export function failedReviewsInARow(task: Task): number {
 
 function awaitingSignOff(state: State, id: string): Task {
   const task = requireTask(state, id)
-  if (task.state !== 'approving' || task.approvedBy !== undefined) {
+  if (task.state !== 'approving' || task.approval !== undefined) {
     throw new Error(`${id} is not waiting for a sign-off.`)
   }
 
   return task
 }
 
-/** The coordinator's sign-off, after which the scheduler merges the task. */
-export function approve(state: State, id: string, by: string, now: number): Task {
+/** The coordinator's sign-off, after which the scheduler merges the task with `commitMessage`. */
+export function approve(state: State, id: string, by: string, commitMessage: string, now: number): Task {
   const task = awaitingSignOff(state, id)
-  task.approvedBy = by
+  task.approval = { by, commitMessage }
   task.claim!.sessions = 0
   logEvent(task, `approved by ${by}`, now)
 
@@ -389,7 +389,7 @@ export function reopen(state: State, id: string, reason: string, now: number, on
     task.state = 'claimed'
     task.signedBy = undefined
     task.signedCommit = undefined
-    task.approvedBy = undefined
+    task.approval = undefined
     task.base.commit = onto ?? task.base.commit
     logEvent(task, `reopened: ${reason}`, now)
   }

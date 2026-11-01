@@ -1,7 +1,7 @@
 import type { AutoReviewConfig } from '../config/config.js'
 import type { Api, Model } from '@earendil-works/pi-ai'
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
-import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../config/config.js'
+import { CODEX_AUTO_REVIEW_MODEL, CODEX_PROVIDER } from '../config/config.js'
 
 export type ResolveReviewModelResult =
   | { ok: true; value: Model<Api> }
@@ -19,18 +19,24 @@ export function resolveReviewModel(registry: ModelRegistry, config: AutoReviewCo
   if (registered !== undefined) {
     return { ok: true, value: registered }
   }
-  if (config.provider !== DEFAULT_PROVIDER || config.model !== DEFAULT_MODEL) {
+  if (config.provider !== CODEX_PROVIDER || config.model !== CODEX_AUTO_REVIEW_MODEL) {
     return { ok: false, category: 'model-unresolved' }
   }
 
   const template =
-    registry.getAll().find(model => model.provider === DEFAULT_PROVIDER && model.api === CODEX_API) ??
+    registry.getAll().find(model => model.provider === CODEX_PROVIDER && model.api === CODEX_API) ??
     provider.getModels().find(model => model.api === CODEX_API)
 
   return template === undefined
     ? { ok: false, category: 'model-unresolved' }
     : {
         ok: true,
-        value: { ...template, id: DEFAULT_MODEL, name: 'Codex Auto Review', reasoning: true, input: ['text'] },
+        value: {
+          ...template,
+          id: CODEX_AUTO_REVIEW_MODEL,
+          name: 'Codex Auto Review',
+          reasoning: true,
+          input: ['text'],
+        },
       }
 }

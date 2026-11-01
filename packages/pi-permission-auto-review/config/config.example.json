@@ -1,10 +1,7 @@
 {
   "$schema": "../schemas/config.schema.json",
-  "provider": "openai-codex",
-  "model": "codex-auto-review",
-  "reasoning": "low",
+  "preset": "codex",
   "timeoutMs": 90000,
   "maxRetries": 2,
-  "followUpReviews": "auto",
-  "includeBaselinePolicy": true
+  "followUpReviews": "auto"
 }

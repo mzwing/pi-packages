@@ -46,7 +46,7 @@ describe('/permission-auto-review', () => {
       cwd: workspace.cwd,
       mode: 'tui',
       modelRegistry: { getAll: () => [] },
-      ui: { select, input: async () => answers['input'], notify },
+      ui: { select, input: async () => answers['input'], editor: async () => answers['editor'], notify },
       waitForIdle: async () => {},
       isProjectTrusted: () => projectTrusted,
       reload,
@@ -93,15 +93,68 @@ describe('/permission-auto-review', () => {
     expect(harness.activeConfig()).toMatchObject({ reasoning: 'low', model: 'kept-model' })
   })
 
-  it('shows the active values with their origins, but never the policy body', async () => {
-    writeFile(configPath(workspace.cwd, 'global'), { reasoning: 'high', additionalPolicy: 'Private policy contents' })
+  it('shows the active values with their origins, but never the rules', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), {
+      reasoning: 'high',
+      autoMode: { soft_deny: ['$defaults', 'Private policy contents'] },
+    })
     const harness = setup([])
     await harness.run('show')
 
     const message = String(harness.notify.mock.calls[0]?.[0])
     expect(message).toContain('reasoning=high (global)')
-    expect(message).toContain('additionalPolicy=configured (global)')
+    expect(message).toContain('autoMode.soft_deny=$defaults + 1 custom (global)')
+    expect(message).toContain('autoMode.allow=$defaults (default)')
     expect(message).not.toContain('Private policy contents')
+  })
+
+  // Rules copied from Claude Code span several lines
+  it('edits a rule list one rule per paragraph', async () => {
+    const harness = setup(['Soft deny rules:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Soft deny rules': 'Edit rules...',
+      editor: '$defaults\n\nForce pushes: never\nto main.\n\n\nNever run migrations by hand.\n',
+    })
+    await harness.run('')
+
+    expect(stored('global')).toMatchObject({
+      autoMode: { soft_deny: ['$defaults', 'Force pushes: never\nto main.', 'Never run migrations by hand.'] },
+    })
+    expect(harness.menus[1]).toContain('Soft deny rules: $defaults + 2 custom (source: global; global: override)')
+  })
+
+  it('drops a rule list set back to the inherited one, and an emptied autoMode block with it', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { autoMode: { soft_deny: ['Never run migrations by hand.'] } })
+    const harness = setup(['Soft deny rules:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Soft deny rules': 'Use inherited value',
+    })
+    await harness.run('')
+
+    expect(Object.keys(stored('global') as object)).toEqual(['$schema'])
+    expect(harness.activeConfig()?.autoMode.soft_deny).toEqual(['$defaults'])
+  })
+
+  it('offers the provider and model of the preset it switches to as the inherited ones', async () => {
+    const harness = setup(['Preset:'], {
+      'Select configuration scope': 'Global configuration',
+      'Configure Preset': 'claude-code',
+    })
+    await harness.run('')
+
+    expect(harness.menus[1]).toContain('Provider: anthropic (source: default; global: inherit)')
+    expect(harness.menus[1]).toContain('Model: claude-sonnet-5 (source: default; global: inherit)')
+    expect(stored('global')).toMatchObject({ preset: 'claude-code' })
+  })
+
+  it('lists the names of the built-in rules $defaults stands for under the active preset', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { preset: 'claude-code' })
+    const harness = setup([])
+    await harness.run('defaults')
+
+    const message = String(harness.notify.mock.calls[0]?.[0])
+    expect(message).toMatch(/\nhard_deny: Data Exfiltration$/)
+    expect(message).toContain('soft_deny: Git Destructive, Irreversible Local Destruction, ')
   })
 
   it('keeps an untrusted project out of the menu and marks it ignored in show', async () => {

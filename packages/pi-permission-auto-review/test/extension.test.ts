@@ -7,6 +7,8 @@ import type {
   PermissionsService,
 } from '@gotgenes/pi-permission-system'
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
 import {
   PERMISSIONS_READY_CHANNEL,
   publishPermissionsService,
@@ -42,7 +44,7 @@ describe('permission auto-review extension', () => {
 
   /** A registry whose every model answers `reply`, so a reviewer's decisions are observable */
   function reviewRegistry(reply: string) {
-    const streamSimple = vi.fn(() => ({
+    const streamSimple = vi.fn((_model: unknown, _context: { systemPrompt: string }) => ({
       result: async () => ({
         role: 'assistant',
         content: [{ type: 'text', text: reply }],
@@ -282,18 +284,47 @@ describe('permission auto-review extension', () => {
     expect(secondDispose).toHaveBeenCalledOnce()
   })
 
+  // Pi loads a project's context files even before it trusts the project
+  it('shows the claude-code reviewer the global context file, and project ones only once Pi trusts the project', async () => {
+    writeFile(configPath(workspace.cwd, 'global'), { preset: 'claude-code' })
+    const { registry, streamSimple } = reviewRegistry('<block>no</block>')
+    const registerAuthorizer = vi.fn<PermissionsService['registerAuthorizer']>(() => vi.fn())
+    publish(registerAuthorizer)
+    const harness = start(registry)
+    harness.start()
+    harness.ready()
+    const authorize = registerAuthorizer.mock.calls[0]?.[1]
+    const contextFiles = [
+      { path: join(getAgentDir(), 'AGENTS.md'), content: 'Global conventions.' },
+      { path: join(workspace.cwd, 'AGENTS.md'), content: 'Project conventions.' },
+    ]
+    for (const projectTrusted of [false, true]) {
+      harness.emit(
+        'before_agent_start',
+        { systemPromptOptions: { contextFiles } },
+        { isProjectTrusted: () => projectTrusted },
+      )
+      await review(authorize)
+    }
+    const [untrusted, trusted] = streamSimple.mock.calls.map(([, context]) => context.systemPrompt)
+
+    expect(untrusted).toContain('Global conventions.')
+    expect(untrusted).not.toContain('Project conventions.')
+    expect(trusted).toContain('Project conventions.')
+  })
+
   it('preserves the old reviewer when reset leaves the merged config invalid', async () => {
     const global = configPath(workspace.cwd, 'global')
     const project = configPath(workspace.cwd, 'project')
     writeFile(global, { reasoning: 'high' })
-    writeFile(project, { includeBaselinePolicy: false, additionalPolicy: 'Review conservatively.' })
+    writeFile(project, { followUpReviews: 'off' })
     const firstDispose = vi.fn()
     const registerAuthorizer = vi.fn(() => firstDispose)
     publish(registerAuthorizer)
     const harness = start()
     harness.start()
     harness.ready()
-    writeFile(project, { includeBaselinePolicy: false })
+    writeFile(project, { reasoning: 'loud' })
 
     await harness.run('reset global')
 

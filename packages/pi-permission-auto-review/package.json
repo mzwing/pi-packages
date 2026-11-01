@@ -1,10 +1,12 @@
 {
   "name": "@mzwing/pi-permission-auto-review",
   "version": "0.10.0",
-  "description": "Codex-style automatic approval reviews for @gotgenes/pi-permission-system",
+  "description": "Codex- and Claude Code-style automatic approval reviews for @gotgenes/pi-permission-system",
   "keywords": [
     "authorizer",
+    "auto-mode",
     "auto-review",
+    "claude-code",
     "codex",
     "permissions",
     "pi",
@@ -57,7 +59,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:schema": "node --experimental-strip-types scripts/generate-schema.ts",
-    "sync:policy": "node --experimental-strip-types scripts/sync-guardian-policy.ts",
+    "sync:guardian-policy": "node --experimental-strip-types scripts/sync-guardian-policy.ts",
+    "sync:claude-code-policy": "node --experimental-strip-types scripts/sync-claude-code-policy.ts",
     "prepack": "pnpm run build"
   },
   "devDependencies": {

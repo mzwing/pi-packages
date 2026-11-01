@@ -7,7 +7,7 @@ import * as v from 'valibot'
 
 export const EXTENSION_ID = 'pi-model-info'
 const CONFIG_SCHEMA_URL =
-  'https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-model-info/schemas/config.schema.json'
+  'https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-model-info/schemas/config.schema.json'
 
 const FREE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 

@@ -1,6 +1,6 @@
 // Reports the upstream Codex Guardian commits since the pinned revision; the policy text is always ported by hand
 //
-//   pnpm sync:policy [--ref <ref>] [--pin]
+//   pnpm sync:guardian-policy [--ref <ref>] [--pin]
 //
 // Exits non-zero when upstream moved. Pin only after porting: POLICY_REVISION goes into the permission review log,
 // so a pin that outruns the text is a false audit record. GITHUB_TOKEN lifts the anonymous rate limit
@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { UPSTREAM_DIRECTORY, UPSTREAM_FILES, UPSTREAM_REPO, UPSTREAM_REVISION } from '../src/prompt/upstream.ts'
+import { UPSTREAM_DIRECTORY, UPSTREAM_FILES, UPSTREAM_REPO, UPSTREAM_REVISION } from '../src/presets/codex/upstream.ts'
 
 interface Commit {
   sha: string
@@ -16,11 +16,11 @@ interface Commit {
   summary: string
 }
 
-const MANIFEST_PATH = fileURLToPath(new URL('../src/prompt/upstream.ts', import.meta.url))
+const MANIFEST_PATH = fileURLToPath(new URL('../src/presets/codex/upstream.ts', import.meta.url))
 const REVISION_PATTERN = /(export const UPSTREAM_REVISION = ')[\da-f]{40}(')/
 
 const { values } = parseArgs({
-  // pnpm forwards the `--` of `pnpm sync:policy -- --pin`, after which parseArgs would ignore the flag
+  // pnpm forwards the `--` of `pnpm sync:guardian-policy -- --pin`, after which parseArgs would ignore the flag
   args: process.argv.slice(2).filter(argument => argument !== '--'),
   options: {
     ref: { type: 'string', default: 'main' },
@@ -86,7 +86,7 @@ const unresolved = heads.filter(head => head.commits.length === 0)
 if (unresolved.length > 0) {
   throw new Error(
     `no commits at ${values.ref} for ${unresolved.map(head => filePath(head.file)).join(', ')}` +
-      ` — check UPSTREAM_DIRECTORY in src/prompt/upstream.ts, or pass a --ref that postdates the move`,
+      ` — check UPSTREAM_DIRECTORY in src/presets/codex/upstream.ts, or pass a --ref that postdates the move`,
   )
 }
 
@@ -128,12 +128,12 @@ for (const { file, commits } of landed) {
 
 if (!values.pin) {
   console.error(
-    '\nRead the commits above, port what applies into the adapted text in src/prompt/policy.ts,' +
+    '\nRead the commits above, port what applies into the adapted text in src/presets/codex/policy.ts,' +
       '\nthen re-run with --pin to record the new revision.',
   )
   process.exit(1)
 }
 
 writeFileSync(MANIFEST_PATH, readFileSync(MANIFEST_PATH, 'utf8').replace(REVISION_PATTERN, `$1${newest.sha}$2`))
-console.log(`\nPinned ${newest.sha} in src/prompt/upstream.ts.`)
+console.log(`\nPinned ${newest.sha} in src/presets/codex/upstream.ts.`)
 console.log('Bump PI_ADAPTATION_REVISION too if you reworded anything Pi-specific.')

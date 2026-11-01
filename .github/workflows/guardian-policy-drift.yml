@@ -61,7 +61,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
-          pnpm --silent --filter @mzwing/pi-permission-auto-review sync:policy > report.txt 2>&1
+          pnpm --silent --filter @mzwing/pi-permission-auto-review sync:guardian-policy > report.txt 2>&1
           echo "drifted=$?" >> "$GITHUB_OUTPUT"
           set -e
           cat report.txt
@@ -84,15 +84,15 @@ jobs:
         run: |
           {
             echo 'Upstream OpenAI Codex Guardian policy has moved past the revision'
-            echo '`src/prompt/upstream.ts` is pinned to.'
+            echo '`src/presets/codex/upstream.ts` is pinned to.'
             echo
             echo '```'
             cat report.txt
             echo '```'
             echo
             echo 'Port what applies into the adapted text in'
-            echo '`packages/pi-permission-auto-review/src/prompt/policy.ts`, then run'
-            echo '`pnpm --filter @mzwing/pi-permission-auto-review sync:policy --pin`.'
+            echo '`packages/pi-permission-auto-review/src/presets/codex/policy.ts`, then run'
+            echo '`pnpm --filter @mzwing/pi-permission-auto-review sync:guardian-policy --pin`.'
             echo 'Do not pin before porting: `POLICY_REVISION` is written to the permission'
             echo 'review log, so a pin that outruns the text is a false audit record.'
             echo

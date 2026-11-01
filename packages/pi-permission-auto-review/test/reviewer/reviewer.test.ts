@@ -1,133 +1,14 @@
-import type { AutoReviewConfig } from '../../src/config/config.js'
-import type { AssistantMessage, Context, SimpleStreamOptions, Usage } from '@earendil-works/pi-ai'
-import type { ModelRegistry, SessionEntry } from '@earendil-works/pi-coding-agent'
-import type { AuthorizerLog, PermissionQuery, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
+import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_CONFIG } from '../../src/config/config.js'
-import { POLICY_REVISION } from '../../src/prompt/policy.js'
-import { DenialCircuitBreaker } from '../../src/reviewer/circuit-breaker.js'
-import { createPermissionReviewer } from '../../src/reviewer/reviewer.js'
-import { permissionDetails } from '../helpers.js'
+import { POLICY_REVISION } from '../../src/presets/codex/policy.js'
+import { createReviewerHarness, reply, STALLED_REPLY, toolCallEntry, USER_ENTRY } from '../helpers.js'
 
 const ALLOW = '{"outcome":"allow"}'
 const DENY =
   '{"risk_level":"high","user_authorization":"unknown","outcome":"deny","rationale":"Publishing was not authorized."}'
 
-const STALLED_REPLY = new Promise<AssistantMessage>(() => {})
-
-const USER_ENTRY = {
-  type: 'message',
-  id: 'user-1',
-  parentId: null,
-  timestamp: '2026-07-23T00:00:00.000Z',
-  message: { role: 'user', content: 'Please run the requested operation.', timestamp: 0 },
-} as SessionEntry
-
-function reply(
-  text: string,
-  stopReason: AssistantMessage['stopReason'] = 'stop',
-  usage: Partial<Usage> = {},
-): AssistantMessage {
-  return {
-    role: 'assistant',
-    content: [{ type: 'text', text }],
-    stopReason,
-    usage: { input: 100, output: 10, cacheRead: 40, cacheWrite: 0, totalTokens: 150, ...usage },
-  } as AssistantMessage
-}
-
-function toolCallEntry(input: Record<string, unknown>): SessionEntry {
-  return {
-    type: 'message',
-    id: 'assistant-1',
-    parentId: 'user-1',
-    timestamp: '2026-07-23T00:00:00.000Z',
-    message: {
-      role: 'assistant',
-      content: [{ type: 'toolCall', id: 'call-1', name: 'write', arguments: input }],
-      timestamp: 0,
-    },
-  } as SessionEntry
-}
-
-interface HarnessOptions {
-  replies?: (AssistantMessage | Error | Promise<AssistantMessage>)[]
-  config?: Partial<AutoReviewConfig>
-  getProvider?: () => unknown
-  entries?: SessionEntry[]
-  turnSignal?: AbortSignal
-}
-
-function createHarness(options: HarnessOptions = {}) {
-  const replies = [...(options.replies ?? [reply(ALLOW)])]
-  const callTimes: number[] = []
-  const branch = [...(options.entries ?? [USER_ENTRY])]
-  const streamSimple = vi.fn(
-    (
-      _model: unknown,
-      _context: Required<Pick<Context, 'systemPrompt' | 'messages'>>,
-      _options: SimpleStreamOptions,
-    ) => ({
-      result: async () => {
-        callTimes.push(Date.now())
-        const next = replies.shift() ?? new Error('no scripted reply')
-        if (next instanceof Error) {
-          throw next
-        }
-
-        return next
-      },
-    }),
-  )
-  const model = {
-    id: 'review-model',
-    provider: 'custom-review',
-    api: 'openai-responses',
-    reasoning: true,
-    contextWindow: 200_000,
-  }
-  const registry = {
-    find: () => model,
-    getProvider: options.getProvider ?? (() => ({ id: 'custom-review' })),
-    streamSimple,
-  } as unknown as ModelRegistry
-  const circuitBreaker = new DenialCircuitBreaker()
-  const reviewer = createPermissionReviewer({
-    config: { ...DEFAULT_CONFIG, provider: 'custom-review', model: 'review-model', ...options.config },
-    context: {
-      modelRegistry: registry,
-      sessionManager: { getBranch: () => [...branch], getSessionId: () => 'session-1' },
-      signal: options.turnSignal,
-    } as never,
-    circuitBreaker,
-    sessionSignal: new AbortController().signal,
-  })
-
-  function start(requestId = 'request-1', details: Partial<PromptPermissionDetails> = {}) {
-    const review = vi.fn<AuthorizerLog['review']>()
-    const verdict = reviewer(permissionDetails({ requestId, ...details }), {} as PermissionQuery, {
-      review,
-      debug: vi.fn(),
-    })
-
-    return { verdict, entries: review.mock.calls }
-  }
-
-  return {
-    /** The session's active branch, which a test may grow or replace between reviews */
-    branch,
-    circuitBreaker,
-    streamSimple,
-    callTimes,
-    start,
-    /** Runs the retry delays and the review timeout on the fake clock */
-    async authorize(requestId = 'request-1', details: Partial<PromptPermissionDetails> = {}) {
-      const { verdict, entries } = start(requestId, details)
-      await vi.runAllTimersAsync()
-
-      return { verdict: await verdict, entries }
-    },
-  }
+function createHarness(options: Partial<Parameters<typeof createReviewerHarness>[0]> = {}) {
+  return createReviewerHarness({ replies: [reply(ALLOW)], ...options })
 }
 
 describe('permission reviewer', () => {
@@ -254,7 +135,7 @@ describe('permission reviewer', () => {
     expect((await harness.authorize('request-19')).verdict).toMatchObject({ kind: 'deny' })
     expect(harness.streamSimple).toHaveBeenCalledTimes(19)
 
-    harness.circuitBreaker.resetTurn()
+    harness.resetTurn()
     expect((await harness.authorize('request-20')).verdict).toEqual({ kind: 'allow' })
   })
 
@@ -390,8 +271,16 @@ describe('permission reviewer', () => {
       const crowded = createHarness({ replies: [reply(ALLOW, 'stop', { totalTokens: 190_000 }), reply(ALLOW)] })
       await authorizeEach(crowded, 2)
 
+      // Every review rereads the whole conversation, so a large window does not let it grow past 256k tokens
+      const capped = createHarness({
+        contextWindow: 1_000_000,
+        replies: [reply(ALLOW, 'stop', { totalTokens: 250_000 }), reply(ALLOW)],
+      })
+      await authorizeEach(capped, 2)
+
       expect(messageCounts(moved)).toEqual([1, 1])
       expect(messageCounts(crowded)).toEqual([1, 1])
+      expect(messageCounts(capped)).toEqual([1, 1])
     })
 
     it('starts over after a follow-up the provider served without a cache hit, unless told to always follow up', async () => {

@@ -1,6 +1,8 @@
 import type { ActivationResult } from './config/command.js'
 import type { AutoReviewConfig } from './config/config.js'
 import type { LoadConfigResult } from './config/store.js'
+import type { ContextFile } from './presets/presets.js'
+import type { PermissionReviewer } from './reviewer/reviewer.js'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type {
   Authorizer,
@@ -9,11 +11,12 @@ import type {
   PermissionsService,
 } from '@gotgenes/pi-permission-system'
 import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { getAgentDir } from '@earendil-works/pi-coding-agent'
 import { getPermissionsService, PERMISSIONS_READY_CHANNEL } from '@gotgenes/pi-permission-system'
 import { registerAutoReviewCommand } from './config/command.js'
 import { EXTENSION_ID } from './config/config.js'
 import { configPath, loadConfig } from './config/store.js'
-import { DenialCircuitBreaker } from './reviewer/circuit-breaker.js'
 import { createPermissionReviewer } from './reviewer/reviewer.js'
 
 const AUTHORIZER_NAME = 'auto-review'
@@ -31,6 +34,7 @@ interface Generation {
   runtime: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'ui'>
   config: AutoReviewConfig | undefined
   controller: AbortController
+  resetTurn: () => void
   authorize: Authorizer['authorize']
   dispose: (() => void) | undefined
 }
@@ -66,9 +70,10 @@ function statusText(current: Generation, tally: Tally): string {
 }
 
 export default function permissionAutoReview(pi: ExtensionAPI): void {
-  const circuitBreaker = new DenialCircuitBreaker()
   let generation: Generation | undefined
   let tally: Tally = { allow: 0, deny: 0, defer: 0 }
+  // As the latest run loaded them, which is what the agent itself was told
+  let contextFiles: readonly ContextFile[] = []
   // One process hosts a node per session and subagent, and a link is only read by the node it registered in
   let sessionId: string | undefined
   let warnedMissingSessionId = false
@@ -79,16 +84,22 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
 
   function createGeneration(runtime: Generation['runtime'], config: AutoReviewConfig | undefined): Generation {
     const controller = new AbortController()
-    const review =
+    const reviewer: PermissionReviewer =
       config === undefined
-        ? deferInvalidConfig
-        : createPermissionReviewer({ config, context: runtime, circuitBreaker, sessionSignal: controller.signal })
+        ? { authorize: deferInvalidConfig, resetTurn: () => {} }
+        : createPermissionReviewer({
+            config,
+            context: runtime,
+            contextFiles: () => contextFiles,
+            sessionSignal: controller.signal,
+          })
     const created: Generation = {
       runtime,
       config,
       controller,
+      resetTurn: reviewer.resetTurn,
       authorize: async (details, query, log) => {
-        const verdict = await review(details, query, log)
+        const verdict = await reviewer.authorize(details, query, log)
         // A retired generation answers for a session or config that is gone
         if (generation === created) {
           tally[verdict.kind] += 1
@@ -112,7 +123,6 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
   function retire(retired: Generation | undefined): void {
     retired?.dispose?.()
     retired?.controller.abort()
-    circuitBreaker.resetTurn()
   }
 
   function reportIssues(issues: string[]): void {
@@ -165,6 +175,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
       warn(`${projectPath} is ignored until Pi trusts this project`)
     }
     tally = { allow: 0, deny: 0, defer: 0 }
+    contextFiles = []
     generation = createGeneration(ctx, result.config)
     renderStatus(generation)
   })
@@ -193,8 +204,18 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
     }
   })
 
+  // Pi loads a project's AGENTS.md and CLAUDE.md whether or not it trusts the project, and a cloned repository
+  // could use them to vouch for its own actions
+  pi.on('before_agent_start', (event, ctx) => {
+    const agentDir = resolve(getAgentDir())
+    const projectTrusted = ctx.isProjectTrusted()
+    contextFiles = (event.systemPromptOptions.contextFiles ?? []).filter(
+      file => projectTrusted || dirname(resolve(file.path)) === agentDir,
+    )
+  })
+
   pi.on('turn_start', () => {
-    circuitBreaker.resetTurn()
+    generation?.resetTurn()
   })
 
   pi.on('session_shutdown', (_event, ctx) => {

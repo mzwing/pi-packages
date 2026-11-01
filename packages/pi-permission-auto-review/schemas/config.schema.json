@@ -1,26 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/main/packages/pi-permission-auto-review/schemas/config.schema.json",
+  "$id": "https://raw.githubusercontent.com/mzwing/pi-packages/master/packages/pi-permission-auto-review/schemas/config.schema.json",
   "type": "object",
   "properties": {
     "$schema": {
       "type": "string",
       "minLength": 1
     },
+    "preset": {
+      "enum": ["codex", "claude-code"],
+      "type": "string",
+      "default": "codex"
+    },
     "provider": {
       "type": "string",
-      "minLength": 1,
-      "default": "openai-codex"
+      "minLength": 1
     },
     "model": {
       "type": "string",
-      "minLength": 1,
-      "default": "codex-auto-review"
+      "minLength": 1
     },
     "reasoning": {
       "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-      "type": "string",
-      "default": "low"
+      "type": "string"
     },
     "timeoutMs": {
       "type": "integer",
@@ -44,30 +46,47 @@
       "type": "string",
       "default": "auto"
     },
-    "includeBaselinePolicy": {
-      "type": "boolean",
-      "default": true
-    },
-    "additionalPolicy": {
-      "type": "string",
-      "minLength": 1
+    "autoMode": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["$defaults"]
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["$defaults"]
+        },
+        "soft_deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["$defaults"]
+        },
+        "hard_deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": ["$defaults"]
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "default": {}
     }
   },
   "required": [],
-  "additionalProperties": false,
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "includeBaselinePolicy": {
-            "const": false
-          }
-        },
-        "required": ["includeBaselinePolicy"]
-      },
-      "then": {
-        "required": ["additionalPolicy"]
-      }
-    }
-  ]
+  "additionalProperties": false
 }

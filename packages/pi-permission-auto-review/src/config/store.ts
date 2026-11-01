@@ -70,11 +70,8 @@ function merge(global: ScopeSnapshot, project: ScopeSnapshot): LoadConfigResult 
 
     return { config: undefined, issues }
   }
-  const merged = mergeConfig(global.config, project.config)
 
-  return merged.ok
-    ? { config: merged.config, issues: [] }
-    : { config: undefined, issues: [`${project.path}: ${merged.issue}`] }
+  return { config: mergeConfig(global.config, project.config), issues: [] }
 }
 
 export function loadConfig(cwd: string, projectTrusted: boolean): LoadConfigResult {

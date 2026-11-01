@@ -1,5 +1,13 @@
 # @mzwing/pi-session-hub
 
+## 0.4.1
+
+### Patch Changes
+
+- [`496aa20`](https://github.com/mzwing/pi-packages/commit/496aa2034b4107f408958cc1a2393646dfdf8cfb) Thanks [@mzwing](https://github.com/mzwing)! - perf(pi-session-hub): find a stopped session of another project by its file name
+  
+  `session_read`, `/sessions <id>` and `session_spawn` with `resume` found a session that is neither running nor in the current project by parsing every session file of every project, about 1.7 s on a machine with 1,000 sessions. They now pick the file Pi named after the id and read only its first line, a few milliseconds there.
+
 ## 0.4.0
 
 ### Minor Changes

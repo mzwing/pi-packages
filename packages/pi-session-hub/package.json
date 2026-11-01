@@ -1,6 +1,6 @@
 {
   "name": "@mzwing/pi-session-hub",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Lists, reads, messages and starts independent Pi sessions",
   "keywords": [
     "multi-agent",

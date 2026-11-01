@@ -1,5 +1,13 @@
 # @mzwing/pi-model-info
 
+## 0.7.1
+
+### Patch Changes
+
+- [`496aa20`](https://github.com/mzwing/pi-packages/commit/496aa2034b4107f408958cc1a2393646dfdf8cfb) Thanks [@mzwing](https://github.com/mzwing)! - perf(pi-model-info): register a provider again only when its catalog or model list changed
+  
+  A session that started on an unexpired cached catalog registered each completed provider twice, once from the cache and once more from the refresh that found it current, and every registration makes Pi rebuild and refresh its whole model list. It now registers once, and when another extension changes a provider's model list, only that provider registers again.
+
 ## 0.7.0
 
 ### Minor Changes

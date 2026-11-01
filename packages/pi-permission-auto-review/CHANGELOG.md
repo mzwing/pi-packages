@@ -1,5 +1,38 @@
 # @mzwing/pi-permission-auto-review
 
+## 1.0.0
+
+### Major Changes
+
+- [`0d468aa`](https://github.com/mzwing/pi-packages/commit/0d468aa62deabfb1aeb53bfc0e07ad6cf982945a) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-permission-auto-review): add Claude Code auto mode prompt preset, support more accurate control options
+  
+  `preset` picks the reviewer. `codex`, the default, keeps the Codex Guardian review. `claude-code` follows Claude Code's auto mode, on `anthropic`/`claude-sonnet-5` by default: a short first pass lets only clearly safe actions through, and a second pass that reasons first decides the rest, over a transcript of the user's messages and the agent's calls without their output. Its prompt and rules are written for Pi, not copied from Claude Code. It hands the third denial in a row, and the twentieth in total, to the human prompt, and it shows the reviewer the user's AGENTS.md and CLAUDE.md, a project's own only once Pi trusts the project. `/permission-auto-review defaults` lists the active preset's built-in rules.
+  
+  Both presets take their rules from `autoMode`, whose `environment`, `allow`, `soft_deny` and `hard_deny` lists match Claude Code's `autoMode` settings. The entry `"$defaults"` stands for the preset's built-in rules, a list without it replaces them, and a project's list replaces only the global list of its name. `autoMode` replaces `includeBaselinePolicy` and `additionalPolicy`, so a config that still sets either fails validation until it is migrated:
+  
+  - The text of `additionalPolicy` becomes an entry beside `"$defaults"` in `autoMode.soft_deny`, in `autoMode.hard_deny` for a rule no approval may lift, or in `autoMode.allow` for an exception.
+  - `"includeBaselinePolicy": false` becomes `soft_deny` and `allow` lists without `"$defaults"`. The Guardian policy's authorization scoring, risk taxonomy and outcome rules stay.
+  
+  Follow-up reviews work under both presets, and a conversation also starts over once it would pass 256k tokens, so a model with a larger context window does not reread an ever longer one.
+  
+  `AutoReviewConfig`, exported from `@mzwing/pi-permission-auto-review/review`, gains `preset` and `autoMode` and loses `includeBaselinePolicy` and `additionalPolicy`. The subpath also exports the `claude-code` pipeline, under names such as `buildClaudeCodeSystemPrompt` and `parseClaudeCodeVerdict`.
+
+### Minor Changes
+
+- [`496aa20`](https://github.com/mzwing/pi-packages/commit/496aa2034b4107f408958cc1a2393646dfdf8cfb) Thanks [@mzwing](https://github.com/mzwing)! - feat(pi-permission-auto-review): continue the reviewer's conversation instead of resending the whole transcript
+  
+  As Codex does, a later ask in a session extends the reviewer's conversation with only what the session added since the last review, so a provider with a prompt cache reads the earlier reviews from it, and an ask beside a tool call reviewed a moment ago sends little more than its own request. The conversation starts over in full when it would overflow the reviewer's context window, when the session moves to another branch, or after a review fails.
+  
+  `followUpReviews` sets the mode. `auto`, the default, also starts over after a follow-up the provider served without a cache hit, so a provider that does not cache never resends a growing conversation; `always` keeps the conversation then, and `off` sends every review in full. The review log's `priorReviews` counts the reviews a request continued, and `policyRevision` ends in `+pi3`.
+  
+  `AutoReviewConfig`, exported from `@mzwing/pi-permission-auto-review/review`, now requires `followUpReviews`, which `DEFAULT_CONFIG` includes, and `renderTranscript` takes the index of the first entry to render.
+
+### Patch Changes
+
+- [`496aa20`](https://github.com/mzwing/pi-packages/commit/496aa2034b4107f408958cc1a2393646dfdf8cfb) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-permission-auto-review): log review usage under keys the review log does not mask
+  
+  pi-permission-system masks every logged value whose key names a token or an authorization, so the review log showed `[redacted]` for `inputTokens`, `cacheReadTokens`, `outputTokens` and `userAuthorization`. A decision now logs `usage` with `input`, `cacheRead` and `output`, and the reviewer's authorization grade as `userApproval`.
+
 ## 0.10.0
 
 ### Minor Changes

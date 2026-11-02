@@ -1,6 +1,7 @@
 import type { AutoReviewConfig } from '../config/config.js'
 import type { Api, AssistantMessage, Message, Model, Usage } from '@earendil-works/pi-ai'
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent'
+import { clampThinkingLevel, isRetryableAssistantError } from '@earendil-works/pi-ai'
 
 const FIRST_RETRY_DELAY_MS = 250
 const MAX_RETRY_DELAY_MS = 30_000
@@ -31,7 +32,7 @@ export interface ModelRequest {
 
 type CallResult<T> = { ok: true; value: T; reply: AssistantMessage } | { ok: false; failure: CallFailure }
 
-/** A `parse` that throws marks the reply malformed, which is retried like a failed call */
+/** A `parse` that throws marks the reply malformed, which is retried like a transient failure */
 export type ModelCall = <T>(request: ModelRequest, parse: (text: string) => T) => Promise<CallResult<T>>
 
 export interface ModelCallOptions {
@@ -88,6 +89,12 @@ async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Prom
   })
 }
 
+/** Retrying any other failure fails the same way, and resending a refused request draws another refusal */
+function isTransient(reply: AssistantMessage): boolean {
+  // A refusal's message is the provider's own explanation, free text that could read like a transient error
+  return reply.rawStopReason !== 'refusal' && isRetryableAssistantError(reply)
+}
+
 export function replyText(message: AssistantMessage): string {
   return message.content
     .flatMap(block => (block.type === 'text' ? block.text : []))
@@ -107,6 +114,8 @@ export function createModelCall(options: ModelCallOptions): ModelCall {
     if (request.tokens + OUTPUT_RESERVE_TOKENS > model.contextWindow) {
       return { ok: false, failure: 'input-budget-exceeded' }
     }
+    // Clamped as in Pi's own turns: `off` on a model that cannot stop thinking means its least effort, not its default
+    const reasoning = clampThinkingLevel(model, request.reasoning)
 
     for (let attempt = 0; ; attempt += 1) {
       const attemptController = new AbortController()
@@ -124,7 +133,7 @@ export function createModelCall(options: ModelCallOptions): ModelCall {
             timeoutMs: Math.max(1, Math.min(attemptTimeoutMs, deadline - Date.now())),
             // Gateways such as opencode-go also reject requests without a session id
             sessionId: `${SESSION_KEY_PREFIX}${options.sessionId}`,
-            ...(model.reasoning && request.reasoning !== 'off' ? { reasoning: request.reasoning } : {}),
+            ...(reasoning === 'off' ? {} : { reasoning }),
             ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
           },
         )
@@ -132,6 +141,9 @@ export function createModelCall(options: ModelCallOptions): ModelCall {
         usage.input += reply.usage.input
         usage.cacheRead += reply.usage.cacheRead
         usage.output += reply.usage.output
+        if (reply.stopReason === 'error' && !isTransient(reply)) {
+          return { ok: false, failure: 'provider-error' }
+        }
         if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
           throw new Error(reply.errorMessage ?? reply.stopReason)
         }

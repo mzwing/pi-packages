@@ -1,5 +1,5 @@
 import type { AutoReviewConfig } from '../src/config/config.js'
-import type { AssistantMessage, Context, SimpleStreamOptions, Usage } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Context, SimpleStreamOptions, ThinkingLevelMap, Usage } from '@earendil-works/pi-ai'
 import type { ModelRegistry, SessionEntry } from '@earendil-works/pi-coding-agent'
 import type {
   AuthorizerLog,
@@ -130,12 +130,13 @@ interface ReviewerHarness {
 
 interface ReviewerHarnessOptions {
   /** Every reply the model gives, in order */
-  replies: (AssistantMessage | Error | Promise<AssistantMessage>)[]
+  replies: (AssistantMessage | Promise<AssistantMessage>)[]
   config?: Partial<AutoReviewConfig>
   getProvider?: () => unknown
   entries?: SessionEntry[]
   turnSignal?: AbortSignal
   contextWindow?: number
+  thinkingLevelMap?: ThinkingLevelMap
 }
 
 export function createReviewerHarness(options: ReviewerHarnessOptions): ReviewerHarness {
@@ -145,9 +146,9 @@ export function createReviewerHarness(options: ReviewerHarnessOptions): Reviewer
   const streamSimple = vi.fn<StreamSimple>(() => ({
     result: async () => {
       callTimes.push(Date.now())
-      const next = replies.shift() ?? new Error('no scripted reply')
-      if (next instanceof Error) {
-        throw next
+      const next = replies.shift()
+      if (next === undefined) {
+        throw new Error('no scripted reply')
       }
 
       return next
@@ -159,6 +160,7 @@ export function createReviewerHarness(options: ReviewerHarnessOptions): Reviewer
     api: 'openai-responses',
     reasoning: true,
     contextWindow: options.contextWindow ?? 200_000,
+    thinkingLevelMap: options.thinkingLevelMap,
   }
   const registry = {
     find: () => model,

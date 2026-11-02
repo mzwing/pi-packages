@@ -49,9 +49,9 @@ Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.p
 | `preset`           | `codex`                                 | `codex` or `claude-code`                                      |
 | `provider`         | `openai-codex` / `anthropic`            | Pi provider id of the reviewer model                          |
 | `model`            | `codex-auto-review` / `claude-sonnet-5` | Reviewer model id                                             |
-| `reasoning`        | `low` / `off`                           | Reasoning level for review calls                              |
+| `reasoning`        | `low` / `high`                          | Reasoning level; `claude-code` uses it for its second pass    |
 | `timeoutMs`        | `90000`                                 | Total budget across retries                                   |
-| `maxRetries`       | `2`                                     | Retries when a call fails or its reply is malformed           |
+| `maxRetries`       | `2`                                     | Retries after a transient failure or a malformed reply        |
 | `attemptTimeoutMs` | —                                       | Time limit for one call; without it, only `timeoutMs` applies |
 | `followUpReviews`  | `auto`                                  | Continue the reviewer's conversation across asks; see below   |
 | `autoMode`         | —                                       | Rules beside or instead of the preset's own; see below        |

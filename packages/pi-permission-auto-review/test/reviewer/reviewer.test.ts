@@ -7,6 +7,9 @@ const ALLOW = '{"outcome":"allow"}'
 const DENY =
   '{"risk_level":"high","user_authorization":"unknown","outcome":"deny","rationale":"Publishing was not authorized."}'
 
+// A failure Pi itself would retry
+const overloaded = (): AssistantMessage => ({ ...reply('', 'error'), errorMessage: '529 overloaded_error: Overloaded' })
+
 function createHarness(options: Partial<Parameters<typeof createReviewerHarness>[0]> = {}) {
   return createReviewerHarness({ replies: [reply(ALLOW)], ...options })
 }
@@ -73,10 +76,36 @@ describe('permission reviewer', () => {
   })
 
   it('retries a transient provider failure within the same review', async () => {
-    const harness = createHarness({ replies: [new Error('temporary failure'), reply('', 'error'), reply(ALLOW)] })
+    const harness = createHarness({ replies: [overloaded(), reply(ALLOW)] })
 
     expect((await harness.authorize()).verdict).toEqual({ kind: 'allow' })
-    expect(harness.streamSimple).toHaveBeenCalledTimes(3)
+    expect(harness.streamSimple).toHaveBeenCalledTimes(2)
+  })
+
+  it('never resends a refused request, or another a retry cannot change, and defers it to the human prompt', async () => {
+    const failures = [
+      // The explanation a refusal carries could read like a transient error
+      {
+        ...reply('', 'error'),
+        rawStopReason: 'refusal',
+        errorMessage: 'This request was declined; you can retry your request with different content.',
+      },
+      // A gateway that relays the refusal as an error of its own
+      {
+        ...reply('', 'error'),
+        errorMessage: 'claude-sonnet-5-5 refused this request (safety filter: content_filter)',
+      },
+      // Request-time authentication fails inside the registry stream, which reports an unusable login the same way
+      { ...reply('', 'error'), errorMessage: 'No API key found for custom-review' },
+    ]
+    for (const failure of failures) {
+      const harness = createHarness({ replies: [failure, reply(ALLOW)] })
+      const { verdict, entries } = await harness.authorize()
+
+      expect(verdict).toEqual({ kind: 'defer' })
+      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
+      expect(harness.streamSimple).toHaveBeenCalledOnce()
+    }
   })
 
   it('retries a malformed reply, and defers to the human prompt once every attempt has failed', async () => {
@@ -90,13 +119,6 @@ describe('permission reviewer', () => {
     expect(malformed.verdict).toEqual({ kind: 'defer' })
     // Every reply is paid for, including the ones that were retried
     expect(malformed.entries[0]?.[1]).toMatchObject({ errorCategory: 'invalid-response', usage: { input: 300 } })
-
-    // Request-time authentication fails inside the registry stream, so an unusable login arrives here too
-    const failing = createHarness({ replies: [new Error('no login'), new Error('no login'), new Error('no login')] })
-    const exhausted = await failing.authorize()
-    expect(exhausted.verdict).toEqual({ kind: 'defer' })
-    expect(exhausted.entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
-    expect(failing.streamSimple).toHaveBeenCalledTimes(3)
   })
 
   // The authorizer chain does not isolate a link that throws
@@ -163,7 +185,7 @@ describe('permission reviewer', () => {
   })
 
   describe('retries', () => {
-    const failures = (count: number): Error[] => Array.from({ length: count }, () => new Error('temporary failure'))
+    const failures = (count: number): AssistantMessage[] => Array.from({ length: count }, overloaded)
 
     it('retries maxRetries times, backing off to at most 30 s between calls', async () => {
       const harness = createHarness({
@@ -298,10 +320,8 @@ describe('permission reviewer', () => {
     })
 
     it('starts over after a review that failed', async () => {
-      const harness = createHarness({
-        config: { maxRetries: 0 },
-        replies: [reply(ALLOW), new Error('context length exceeded'), reply(ALLOW)],
-      })
+      const overflow = { ...reply('', 'error'), errorMessage: 'context length exceeded' }
+      const harness = createHarness({ replies: [reply(ALLOW), overflow, reply(ALLOW)] })
       await authorizeEach(harness, 3)
 
       expect(messageCounts(harness)).toEqual([1, 3, 1])

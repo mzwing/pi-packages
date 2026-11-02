@@ -6,8 +6,7 @@ import { createReviewerHarness, reply, toolCallEntry, USER_ENTRY } from '../../h
 const ALLOW = '<block>no</block>'
 const BLOCK = '<block>yes</block>'
 const DENY =
-  '<thinking>The push rewrites main.</thinking><block>yes</block><category>Git Destructive</category><reason>[Git Destructive] Force-pushing main destroys shared history.</reason>'
-const CLEAR = '<thinking>The user named this exact push.</thinking><block>no</block>'
+  '<block>yes</block><category>Git Destructive</category><reason>[Git Destructive] Force-pushing main destroys shared history.</reason>'
 
 type HarnessOptions = Partial<Parameters<typeof createReviewerHarness>[0]>
 
@@ -61,6 +60,14 @@ describe('claude-code preset', () => {
     expect(entries[0]?.[1]).toMatchObject({ outcome: 'allow', stage: 'fast', policyRevision: POLICY_REVISION })
   })
 
+  it('asks a model that cannot stop thinking for its least effort on the fast pass, not its default', async () => {
+    const harness = createHarness({ thinkingLevelMap: { off: null, minimal: null } })
+    await harness.authorize()
+    const [, , options] = harness.streamSimple.mock.calls[0] ?? []
+
+    expect(options).toMatchObject({ reasoning: 'low', maxTokens: 1024 })
+  })
+
   it('sends a fast block to a second pass that continues it, and denies with the rule and guidance', async () => {
     const fast = reply(BLOCK)
     const harness = createHarness({ replies: [fast, reply(DENY)], config: { reasoning: 'low' } })
@@ -84,8 +91,17 @@ describe('claude-code preset', () => {
     })
   })
 
+  it('lets the second pass reason natively, at high effort by default, instead of asking it to write its reasoning out', async () => {
+    const harness = createHarness({ replies: [reply(BLOCK), reply(DENY)] })
+    await harness.authorize()
+    const [, second, secondOptions] = harness.streamSimple.mock.calls[1] ?? []
+
+    expect(secondOptions).toMatchObject({ reasoning: 'high' })
+    expect(second?.messages[2]?.content).not.toContain('<thinking>')
+  })
+
   it('escalates a fast reply that opens without a verdict, without retrying it, and lets the second pass clear it', async () => {
-    const harness = createHarness({ replies: [reply('Looking at the push first.'), reply(CLEAR)] })
+    const harness = createHarness({ replies: [reply('Looking at the push first.'), reply(ALLOW)] })
     const { verdict, entries } = await harness.authorize()
 
     expect(verdict).toEqual({ kind: 'allow' })

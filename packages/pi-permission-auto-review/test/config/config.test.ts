@@ -12,7 +12,7 @@ it('fills provider, model and reasoning from the preset, unless a file sets them
   expect(mergeConfig({ preset: 'claude-code' }, { model: 'claude-opus-5-5' })).toMatchObject({
     provider: 'anthropic',
     model: 'claude-opus-5-5',
-    reasoning: 'off',
+    reasoning: 'high',
   })
 })
 

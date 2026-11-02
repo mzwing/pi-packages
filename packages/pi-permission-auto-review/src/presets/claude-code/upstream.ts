@@ -4,7 +4,7 @@
 export const UPSTREAM_VERSION = '2.1.314'
 
 /** Bumped when the adapted text changes without the upstream version moving */
-export const PI_ADAPTATION_REVISION = 1
+export const PI_ADAPTATION_REVISION = 2
 
 /** The rule labels `claude auto-mode defaults` printed at that release, never their text */
 export const UPSTREAM_LABELS: Record<'environment' | 'allow' | 'soft_deny' | 'hard_deny', string[]> = {

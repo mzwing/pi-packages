@@ -53,6 +53,7 @@ export const CLAUDE_CODE_PRESET: Preset = {
       systemPrompt,
       messages: [...fastRequest.messages, fast.reply, userMessage(THINKING_PROMPT)],
       tokens: fastRequest.tokens + approximateTokens(replyText(fast.reply) + THINKING_PROMPT),
+      // Reasons natively, as Claude refuses a request to write its reasoning out (`reasoning_extraction`)
       reasoning: config.reasoning,
     }
     const escalated = { ...fields, stage: 'thinking', fastVerdict: fast.value }

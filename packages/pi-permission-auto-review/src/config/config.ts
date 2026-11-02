@@ -24,8 +24,8 @@ export const PRESET_DEFAULTS: Readonly<
   Record<PresetName, { provider: string; model: string; reasoning: ReasoningLevel }>
 > = {
   codex: { provider: CODEX_PROVIDER, model: CODEX_AUTO_REVIEW_MODEL, reasoning: 'low' },
-  // Its reviewer reasons in `<thinking>` text instead, as Claude Code's does
-  'claude-code': { provider: 'anthropic', model: 'claude-sonnet-5', reasoning: 'off' },
+  // Used by the second pass alone, at Sonnet's own default effort
+  'claude-code': { provider: 'anthropic', model: 'claude-sonnet-5', reasoning: 'high' },
 }
 
 const nonBlankSchema = v.pipe(v.string(), v.trim(), v.minLength(1))

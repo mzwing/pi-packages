@@ -1,5 +1,25 @@
 # @mzwing/pi-permission-auto-review
 
+## 1.0.1
+
+### Patch Changes
+
+- [`0193981`](https://github.com/mzwing/pi-packages/commit/0193981627b5f175d02702fb65ba2b4aa1a31122) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-permission-auto-review): never resend a request the provider refused
+  
+  A review retried every failed call, so a request Claude refused went out again up to `maxRetries` times, each time drawing another refusal on the account. A provider error now gets another call only when Pi itself would retry it, such as a rate limit, an overloaded or unavailable provider or a dropped connection. A refusal, or any other error a retry cannot change, such as an unusable login, falls to you at once.
+
+- [`0193981`](https://github.com/mzwing/pi-packages/commit/0193981627b5f175d02702fb65ba2b4aa1a31122) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-permission-auto-review): run the `claude-code` fast pass at the least effort the model allows
+  
+  The fast pass asked for no reasoning, which a model that cannot turn thinking off, such as Claude Sonnet 5.5, answered at its default effort under the fast pass's 1024-token cap. Review calls now fit `reasoning` to the levels the model offers, as Pi does for its own turns, so the fast pass runs at the model's least effort, `low` on Claude Sonnet 5.5, and so does a configured `off`.
+
+- [`0193981`](https://github.com/mzwing/pi-packages/commit/0193981627b5f175d02702fb65ba2b4aa1a31122) Thanks [@mzwing](https://github.com/mzwing)! - fix(pi-permission-auto-review): stop Claude from refusing the `claude-code` second pass
+  
+  The second pass asked the reviewer to write its reasoning in `<thinking>` tags in its reply. Claude Sonnet 5.5 and other recent Claude models refuse that as reasoning extraction before answering, so no call the fast pass flagged got a verdict, and each fell to you once the review failed.
+  
+  The second pass now reasons natively at `reasoning`, which for `claude-code` defaults to `high`, Claude Sonnet's own default effort, instead of `off`. The policy revision becomes `claude-code/2.1.314+pi2`.
+  
+  `CLAUDE_CODE_THINKING_PROMPT`, exported from `@mzwing/pi-permission-auto-review/review`, no longer asks for written reasoning either, so a request sending it should turn the model's reasoning on.
+
 ## 1.0.0
 
 ### Major Changes

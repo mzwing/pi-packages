@@ -1,5 +1,15 @@
 # @mzwing/pi-session-hub
 
+## 0.4.2
+
+### Patch Changes
+
+- [`581de5d`](https://github.com/mzwing/pi-packages/commit/581de5dfd4296b26d44a911d6e5f462f92aa0db9) Thanks [@mzwing](https://github.com/mzwing)! - chore: accept Pi 1.5
+  
+  The Pi peer range moves to `^1.5.0`, the line these packages are built and tested against. From 1.5.0 on, a saved "Do not trust" decision for a project or a parent folder also holds when the project has no `.pi/` resources or `.agents/skills` of its own, so pi-permission-auto-review leaves that project's `AGENTS.md` and `CLAUDE.md` out of the review and keeps only your global `AGENTS.md`, instead of passing them to the reviewer where a cloned repository could vouch for its own actions.
+  
+  Each package now includes its `CHANGELOG.md` in the published npm package, which earlier releases left out. From 1.5.0 on, Pi reads a package's changelog and, on the first fresh launch after an update such as `pi update`, shows the entries newer than your previous version under "Extension Updates". Because Pi starts tracking a package's version only once the installed release ships a changelog, it records this release without showing anything and shows the notes from the next update on.
+
 ## 0.4.1
 
 ### Patch Changes

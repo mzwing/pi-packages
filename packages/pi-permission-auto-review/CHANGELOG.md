@@ -1,5 +1,19 @@
 # @mzwing/pi-permission-auto-review
 
+## 1.0.2
+
+### Patch Changes
+
+- [`581de5d`](https://github.com/mzwing/pi-packages/commit/581de5dfd4296b26d44a911d6e5f462f92aa0db9) Thanks [@mzwing](https://github.com/mzwing)! - chore: accept Pi 1.5
+  
+  The Pi peer range moves to `^1.5.0`, the line these packages are built and tested against. From 1.5.0 on, a saved "Do not trust" decision for a project or a parent folder also holds when the project has no `.pi/` resources or `.agents/skills` of its own, so pi-permission-auto-review leaves that project's `AGENTS.md` and `CLAUDE.md` out of the review and keeps only your global `AGENTS.md`, instead of passing them to the reviewer where a cloned repository could vouch for its own actions.
+  
+  Each package now includes its `CHANGELOG.md` in the published npm package, which earlier releases left out. From 1.5.0 on, Pi reads a package's changelog and, on the first fresh launch after an update such as `pi update`, shows the entries newer than your previous version under "Extension Updates". Because Pi starts tracking a package's version only once the installed release ships a changelog, it records this release without showing anything and shows the notes from the next update on.
+
+- [`581de5d`](https://github.com/mzwing/pi-packages/commit/581de5dfd4296b26d44a911d6e5f462f92aa0db9) Thanks [@mzwing](https://github.com/mzwing)! - chore(pi-permission-auto-review): reconcile the bundled Guardian policy against openai/codex@e54a5713 ([#38](https://github.com/mzwing/pi-packages/issues/38))
+  
+  Upstream simplified the Guardian outcome policy's post-denial approval rule (openai/codex#60391): re-approving a previously denied action after seeing the concrete risk sets user authorization to `high`, and the rule no longer repeats that the approval must be explicit, cover the exact action, and come from the user beyond doubt, since the authorization scoring rules still require those. The `codex` preset's adapted prompt simplifies its post-denial rule the same way while still keeping re-approval from lifting a denial for a critical action or an absolute (`hard_deny`) rule, and the `policyRevision` written to the permission review log becomes `openai-codex/e54a5713caf331f42a6eef0166186df5f7563c29+pi3`.
+
 ## 1.0.1
 
 ### Patch Changes

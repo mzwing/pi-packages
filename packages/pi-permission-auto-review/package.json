@@ -33,6 +33,7 @@
     "schemas",
     "config/config.example.json",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "type": "module",
@@ -66,7 +67,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",
-    "@gotgenes/pi-permission-system": "42.0.0",
+    "@gotgenes/pi-permission-system": "42.0.2",
     "@types/node": "catalog:",
     "@valibot/to-json-schema": "catalog:",
     "tsdown": "catalog:",

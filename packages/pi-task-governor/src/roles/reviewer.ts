@@ -3,7 +3,6 @@ import type { Runtime } from '../sessions/runtime.js'
 import type { Evidence } from '../tasks/task.js'
 import type { Host } from '../tooling.js'
 import type { AgentBeforeSettleEventResult, ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import { StringEnum } from '@earendil-works/pi-ai'
 import { defineTool } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { childBinding } from '../sessions/children.js'
@@ -73,7 +72,8 @@ export function registerReviewerTools(pi: ExtensionAPI, host: Host): void {
       description:
         'Give the review verdict, once. A pass needs evidence for every criterion: a passing task_check run where the criterion has a check, otherwise an observation naming the files and lines you verified.',
       parameters: Type.Object({
-        verdict: StringEnum(['pass', 'fail'] as const),
+        // What pi-ai's StringEnum builds, which Pi 1.5 types for pi-schema instead of TypeBox
+        verdict: Type.Unsafe<'pass' | 'fail'>({ type: 'string', enum: ['pass', 'fail'] }),
         observations: Type.Optional(
           Type.Array(
             Type.Object({

@@ -3,7 +3,6 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { StringEnum } from '@earendil-works/pi-ai'
 import { defineTool, SessionManager } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import { sendMail } from '../mail/mailbox.js'
@@ -153,7 +152,10 @@ export function registerSessionTools(pi: ExtensionAPI): void {
         ),
         name: Type.Optional(Type.String({ description: 'Session name' })),
         model: Type.Optional(Type.String({ description: 'provider/model (default: the Pi default)' })),
-        thinking: Type.Optional(StringEnum(THINKING_LEVELS)),
+        // What pi-ai's StringEnum builds, which Pi 1.5 types for pi-schema instead of TypeBox
+        thinking: Type.Optional(
+          Type.Unsafe<(typeof THINKING_LEVELS)[number]>({ type: 'string', enum: THINKING_LEVELS }),
+        ),
         resume: Type.Optional(Type.String({ description: 'Id of a stopped session to continue with the prompt' })),
       }),
       async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
